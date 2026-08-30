@@ -1,0 +1,17 @@
+{
+  "id": "bad-cycle",
+  "name": "成环坏图",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "a": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "b": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "a", "type": "STATIC" },
+    { "from": "a", "to": "b", "type": "STATIC" },
+    { "from": "b", "to": "a", "type": "STATIC" },
+    { "from": "b", "to": "end", "type": "STATIC" }
+  ]
+}

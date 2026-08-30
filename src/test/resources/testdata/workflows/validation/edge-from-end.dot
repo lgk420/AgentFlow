@@ -1,0 +1,14 @@
+digraph bad_edge_from_end {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    classify [label="classify"];
+    end [label="end\nEND"];
+
+    start -> classify [label="STATIC"];
+    classify -> end [label="STATIC"];
+    end -> classify [label="从 END 出发（非法出边）", color="red", fontcolor="red", penwidth=2];
+}

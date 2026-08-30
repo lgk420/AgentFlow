@@ -1,0 +1,118 @@
+{
+  "id": "fitness-coach",
+  "name": "健身教练助手",
+  "nodes": {
+    "start": { "type": "START" },
+    "parse": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "把用户的训练日志解析为结构化 JSON，只输出 JSON：识别训练日期、主肌群、每个动作的组数/次数/重量。用户日志：{{inputs.userLog}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "训练日期 YYYYMMDD" },
+          "muscleGroup": { "type": "string", "enum": ["腿", "胸", "背"] },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "exercise": { "type": "string", "description": "动作名称" },
+                "setsDetail": {
+                  "type": "array",
+                  "description": "每组明细：第一组→最后一组，每组含重量与次数",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "weight": { "type": "number", "description": "该组重量 kg" },
+                      "reps": { "type": "integer", "description": "该组次数" }
+                    },
+                    "required": ["weight", "reps"]
+                  }
+                }
+              },
+              "required": ["exercise", "setsDetail"]
+            }
+          }
+        },
+        "required": ["date", "muscleGroup", "actions"]
+      }
+    },
+    "store": {
+      "type": "TOOL",
+      "tool": "training_log_store",
+      "inputs": {
+        "log": "{{nodes.parse.output}}",
+        "userId": "{{inputs.userId | 'default-user'}}"
+      }
+    },
+    "history_query": {
+      "type": "TOOL",
+      "tool": "training_history_query",
+      "inputs": {
+        "muscle_group": "{{nodes.parse.output.muscleGroup}}",
+        "weeks": 6
+      }
+    },
+    "kb_retrieve": {
+      "type": "RAG",
+      "query": "{{nodes.parse.output.muscleGroup}} 训练 渐进超负荷 动作要点",
+      "topK": 3,
+      "collection": "workout_kb"
+    },
+    "accessory": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "今日主项 {{nodes.parse.output.muscleGroup}}，用户近期小肌群训练史 {{nodes.history_query.output.accessoryHistory}}。按大带小原则，推荐 1~2 个今天应带的小肌群，并简述理由。",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "accessoryGroups": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["accessoryGroups"]
+      }
+    },
+    "metrics": {
+      "type": "TOOL",
+      "tool": "workout_metrics",
+      "inputs": {
+        "actions": "{{nodes.parse.output.actions}}",
+        "history": "{{nodes.history_query.output.recentActions}}"
+      }
+    },
+    "route": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "硬性标记 volumeDropAlert={{nodes.metrics.output.volumeDropAlert}}、comfortZoneWarning={{nodes.metrics.output.comfortZoneWarning}}，指标与历史对比={{nodes.metrics.output}}，附属推荐={{nodes.accessory.output.accessoryGroups}}。硬标记触发时照实裁决；否则在模糊区间综合判断。只输出 route 和 reason。",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "route": { "type": "string", "enum": ["WARN", "ADJUST", "NORMAL", "CELEBRATE"] },
+          "reason": { "type": "string" }
+        },
+        "required": ["route", "reason"]
+      }
+    },
+    "report": {
+      "type": "AGENTIC_LOOP",
+      "model": "deepseek-v4-flash",
+      "systemPrompt": "你是资深健身教练。本次指标={{nodes.metrics.output}}，路由裁决={{nodes.route.output}}，训练知识={{nodes.kb_retrieve.output.chunks}}。请生成两份输出：①本次训练复盘报告：容量/强度趋势、动作平衡、问题与鼓励；②下次训练预热处方：按腿→胸→背轮换顺序给出具体动作、组数、次数、重量建议，并结合今日附属推荐 {{nodes.accessory.output.accessoryGroups}}。需要时可用工具查询历史记录与计算容量。",
+      "tools": ["training_history_query", "workout_metrics"],
+      "maxIterations": 5
+    },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "parse", "type": "STATIC" },
+    { "from": "parse", "to": "store", "type": "STATIC" },
+    { "from": "store", "to": "history_query", "type": "STATIC" },
+    { "from": "store", "to": "kb_retrieve", "type": "STATIC" },
+    { "from": "history_query", "to": "accessory", "type": "STATIC" },
+    { "from": "history_query", "to": "metrics", "type": "STATIC" },
+    { "from": "kb_retrieve", "to": "report", "type": "STATIC" },
+    { "from": "accessory", "to": "route", "type": "STATIC" },
+    { "from": "metrics", "to": "route", "type": "STATIC" },
+    { "from": "route", "to": "report", "type": "STATIC" },
+    { "from": "report", "to": "end", "type": "STATIC" }
+  ]
+}

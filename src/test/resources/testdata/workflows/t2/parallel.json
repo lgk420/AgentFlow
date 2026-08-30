@@ -1,0 +1,17 @@
+{
+  "id": "t2-parallel",
+  "name": "T2 简单并行",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "tool1": { "type": "TOOL", "tool": "query_a" },
+    "tool2": { "type": "TOOL", "tool": "query_b" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "tool1", "type": "STATIC" },
+    { "from": "start", "to": "tool2", "type": "STATIC" },
+    { "from": "tool1", "to": "end", "type": "STATIC" },
+    { "from": "tool2", "to": "end", "type": "STATIC" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bad-no-end",
+  "name": "没有END",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": { "type": "LLM", "model": "qwen-plus", "prompt": "p" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" }
+  ]
+}

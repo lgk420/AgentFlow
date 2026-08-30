@@ -1,0 +1,22 @@
+{
+  "id": "t2-cond",
+  "name": "T2 条件分支",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "analysis_llm": {
+      "type": "LLM", "model": "qwen-plus", "prompt": "p",
+      "stubOutput": { "trend": "DOWN" }
+    },
+    "adjust": { "type": "TOOL", "tool": "adjust" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "analysis_llm", "type": "STATIC" },
+    { "from": "analysis_llm", "to": "adjust", "type": "CONDITIONAL",
+      "condition": "{{nodes.analysis_llm.output.trend}} == 'DOWN'" },
+    { "from": "analysis_llm", "to": "end", "type": "CONDITIONAL",
+      "condition": "{{nodes.analysis_llm.output.trend}} != 'DOWN'" },
+    { "from": "adjust", "to": "end", "type": "STATIC" }
+  ]
+}

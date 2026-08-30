@@ -1,0 +1,17 @@
+{
+  "id": "t2-branch",
+  "name": "T2 双分支",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "a": { "type": "LLM", "model": "qwen-plus", "prompt": "p", "stubOutput": { "branch": "A" } },
+    "b": { "type": "TOOL", "tool": "query" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "a", "type": "STATIC" },
+    { "from": "start", "to": "b", "type": "STATIC" },
+    { "from": "a", "to": "end", "type": "STATIC" },
+    { "from": "b", "to": "end", "type": "STATIC" }
+  ]
+}

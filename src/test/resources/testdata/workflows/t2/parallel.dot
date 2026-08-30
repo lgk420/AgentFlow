@@ -1,0 +1,16 @@
+digraph t2_parallel {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    tool1 [label="tool1\nTOOL · 并行任务1"];
+    tool2 [label="tool2\nTOOL · 并行任务2"];
+    end   [label="end\nEND"];
+
+    start -> tool1 [label="STATIC"];
+    start -> tool2 [label="STATIC"];
+    tool1 -> end   [label="STATIC"];
+    tool2 -> end   [label="STATIC"];
+}

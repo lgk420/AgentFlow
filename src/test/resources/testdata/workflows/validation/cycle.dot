@@ -1,0 +1,16 @@
+digraph bad_cycle {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    a [label="a"];
+    b [label="b"];
+    end  [label="end\nEND"];
+
+    start -> a [label="STATIC"];
+    a -> b [label="STATIC"];
+    b -> a [label="成环 a→b→a", color="red", fontcolor="red", penwidth=2];
+    b -> end [label="STATIC"];
+}

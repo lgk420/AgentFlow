@@ -1,0 +1,19 @@
+{
+  "id": "bad-node-config",
+  "name": "LLM节点带tool字段",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "p",
+      "tool": "workout_log_query"
+    },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "end", "type": "STATIC" }
+  ]
+}

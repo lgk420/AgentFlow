@@ -1,0 +1,13 @@
+digraph bad_node_config {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    classify [label="classify\nLLM · 非法带 tool 字段", fillcolor="#ffcccc", color="red"];
+    end [label="end\nEND"];
+
+    start -> classify [label="STATIC"];
+    classify -> end [label="STATIC"];
+}

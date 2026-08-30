@@ -1,0 +1,125 @@
+{
+  "id": "fitness-coach",
+  "name": "健身教练助手",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身教练助手的意图分流员。判断用户想做什么：训练分析（分析训练记录/练得怎么样）、体测解读（解读体测报告）、还是计划生成（制定训练与饮食计划）。用户说：{{inputs.userMessage}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": { "category": { "type": "string", "enum": ["ANALYSIS", "MEASURE", "PLAN"] } },
+        "required": ["category"]
+      }
+    },
+    "analysis_query": {
+      "type": "TOOL",
+      "tool": "workout_log_query",
+      "inputs": { "muscle_group": "{{inputs.muscleGroup}}", "from": "{{inputs.from | '2026-08-01'}}", "to": "{{inputs.to | '2026-08-13'}}" }
+    },
+    "analysis_rag": {
+      "type": "RAG",
+      "query": "{{inputs.userMessage}} 动作要点 渐进超负荷 训练原则",
+      "topK": 3,
+      "collection": "workout_kb"
+    },
+    "analysis_llm": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是资深健身教练。基于训练记录和检索到的训练知识，分析本次训练：容量、强度趋势、动作平衡、存在的问题。\n记录：{{nodes.analysis_query.output.data}}\n知识：{{nodes.analysis_rag.output.chunks}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "trend": { "type": "string", "enum": ["UP", "DOWN", "STABLE"] },
+          "summary": { "type": "string" },
+          "suggestion": { "type": "string" }
+        },
+        "required": ["trend", "summary", "suggestion"]
+      }
+    },
+    "analysis_adjust": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "用户训练趋势在下降。基于分析给出减量/调整建议，重点避免过度训练、恢复优先。分析：{{nodes.analysis_llm.output.summary}}"
+    },
+    "measure_parse": {
+      "type": "TOOL",
+      "tool": "body_measure_parse",
+      "inputs": { "image_path": "{{inputs.measureImage}}" }
+    },
+    "measure_llm": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身教练，解读用户的体测数据：{{nodes.measure_parse.output.metrics}}。判断体脂水平，评估肌肉量与代谢，给出针对性建议。",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "fat_level": { "type": "string", "enum": ["HIGH", "NORMAL", "LOW"] },
+          "summary": { "type": "string" },
+          "suggestion": { "type": "string" }
+        },
+        "required": ["fat_level", "summary", "suggestion"]
+      }
+    },
+    "measure_lose": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "用户体脂偏高需减脂。基于体测数据 {{nodes.measure_parse.output.metrics}} 给出饮食与训练结合的减脂建议。"
+    },
+    "plan": {
+      "type": "AGENTIC_LOOP",
+      "model": "qwen-plus",
+      "systemPrompt": "你是健身教练，为用户制定下周训练计划。可用工具查询历史训练记录、计算训练容量，结合用户目标 {{inputs.goal | '维持'}} 与当前水平生成一周训练计划。",
+      "tools": ["workout_log_query", "progress_calc"],
+      "maxIterations": 5
+    },
+    "diet_rag": {
+      "type": "RAG",
+      "query": "{{inputs.goal | '维持'}} 目标 饮食 蛋白质 热量 热量缺口",
+      "topK": 3,
+      "collection": "nutrition_kb"
+    },
+    "diet_llm": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身营养师。基于用户体测数据、训练目标和营养知识，制定一周饮食计划。\n体测：{{inputs.bodyMetrics | '未提供'}}\n目标：{{inputs.goal | '维持'}}\n营养知识：{{nodes.diet_rag.output.chunks}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "calorie_target": { "type": "number" },
+          "protein_target": { "type": "number" },
+          "diet_plan": { "type": "string" }
+        },
+        "required": ["calorie_target", "protein_target", "diet_plan"]
+      }
+    },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "analysis_query", "type": "LLM_DYNAMIC",
+      "label": "训练分析", "description": "用户想分析训练记录或评估训练表现" },
+    { "from": "classify", "to": "measure_parse", "type": "LLM_DYNAMIC",
+      "label": "体测解读", "description": "用户想解读体测报告" },
+    { "from": "classify", "to": "plan", "type": "LLM_DYNAMIC",
+      "label": "计划生成", "description": "用户想制定训练与饮食计划" },
+    { "from": "analysis_query", "to": "analysis_rag", "type": "STATIC" },
+    { "from": "analysis_rag", "to": "analysis_llm", "type": "STATIC" },
+    { "from": "analysis_llm", "to": "analysis_adjust", "type": "CONDITIONAL",
+      "condition": "{{nodes.analysis_llm.output.trend}} == 'DOWN'" },
+    { "from": "analysis_llm", "to": "end", "type": "CONDITIONAL",
+      "condition": "{{nodes.analysis_llm.output.trend}} != 'DOWN'" },
+    { "from": "analysis_adjust", "to": "end", "type": "STATIC" },
+    { "from": "measure_parse", "to": "measure_llm", "type": "STATIC" },
+    { "from": "measure_llm", "to": "measure_lose", "type": "CONDITIONAL",
+      "condition": "{{nodes.measure_llm.output.fat_level}} == 'HIGH'" },
+    { "from": "measure_llm", "to": "end", "type": "CONDITIONAL",
+      "condition": "{{nodes.measure_llm.output.fat_level}} != 'HIGH'" },
+    { "from": "measure_lose", "to": "end", "type": "STATIC" },
+    { "from": "plan", "to": "diet_rag", "type": "STATIC" },
+    { "from": "diet_rag", "to": "diet_llm", "type": "STATIC" },
+    { "from": "diet_llm", "to": "end", "type": "STATIC" }
+  ]
+}

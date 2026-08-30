@@ -1,0 +1,15 @@
+digraph bad_llm_dyn_label {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    classify [label="classify"];
+    analysis [label="analysis"];
+    end [label="end\nEND"];
+
+    start -> classify [label="STATIC"];
+    classify -> analysis [label="LLM_DYNAMIC（缺 label）", color="red", fontcolor="red", penwidth=2];
+    analysis -> end [label="STATIC"];
+}

@@ -1,0 +1,13 @@
+digraph t2_serial {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    a     [label="a\nLLM · 串行节点"];
+    end   [label="end\nEND"];
+
+    start -> a [label="STATIC"];
+    a -> end   [label="STATIC"];
+}

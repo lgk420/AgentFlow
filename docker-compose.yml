@@ -1,0 +1,71 @@
+# AgentFlow 本地基础设施
+# ============================================================
+# 用法（docker 装在 WSL 里，请在 Ubuntu 终端执行）：
+#   cd /mnt/c/workspaces/AgentFlow
+#   docker compose up -d                 # 启动 redis + postgres
+#   docker compose --profile local-llm up -d   # 额外启动本地 LLM（ollama）
+#
+# 版本策略：镜像一律"主版本固定"，不用 latest —— 保证环境可复现；
+# 每个镜像都注释了选版理由（也当面试话术用）。见 docs/架构设计.md
+# ============================================================
+
+name: agentflow
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: agentflow-redis
+    # 选版理由：Redis 7 是长期稳定大版本，Spring Data Redis / Lettuce 兼容性好；
+    # 主版本固定 → 自动跟随小版本补丁，且不被 latest 的版本漂移影响可复现性。
+    # alpine 版：体积小、内存占用低，纯本地开发足够。
+    ports:
+      - "6379:6379"          # 宿主机:容器 —— Windows 上的 Java 应用经 WSL2 localhost 转发访问
+    volumes:
+      - redisdata:/data      # 数据落卷：容器重建/升级不丢数据
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped  # WSL 重启后容器自动拉起；docker compose down 后不会被拉起
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agentflow-postgres
+    # 选版理由：此 tag 同时固定 Postgres 主版本 16 与 pgvector 扩展版本；
+    # pg16 是 Spring-AI VectorStore 集成广泛验证的组合，换主版本需回归客户端兼容性。
+    # 这才是"轻量但真实"的向量库选择（与 Milvus 可替换，见 docs/架构设计.md）。
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-agentflow}"
+      POSTGRES_USER: "${POSTGRES_USER:-agentflow}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-agentflow}"
+      # 密码可覆盖：在仓库根放 .env（已 gitignore），如 POSTGRES_PASSWORD=xxx
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentflow} -d ${POSTGRES_DB:-agentflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # 可选：本地 LLM（离线演示用），默认不启动。
+  # 首次拉模型：docker compose --profile local-llm exec ollama ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentflow-ollama
+    # 版本策略的特例：ollama 是可选本地开发工具，不参与"必须可复现"的基础设施；
+    # 真正决定环境的是运行时下载的模型（qwen2.5:7b 等），镜像 tag 反而次要，故用 latest。
+    profiles: ["local-llm"]  # 显式 --profile local-llm 才启动
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  redisdata:
+  pgdata:
+  ollama:

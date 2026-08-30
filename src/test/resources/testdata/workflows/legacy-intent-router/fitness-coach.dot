@@ -1,0 +1,37 @@
+digraph fitness_coach {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start  [label="start\nSTART"];
+    classify [label="classify\nLLM · 意图分流"];
+    analysis_query [label="analysis_query\nTOOL · 查训练记录"];
+    analysis_rag [label="analysis_rag\nRAG · 训练知识"];
+    analysis_llm [label="analysis_llm\nLLM · 分析趋势"];
+    analysis_adjust [label="analysis_adjust\nLLM · 减量建议"];
+    measure_parse [label="measure_parse\nTOOL · 解析体测"];
+    measure_llm [label="measure_llm\nLLM · 解读体测"];
+    measure_lose [label="measure_lose\nLLM · 减脂建议"];
+    plan [label="plan\nAGENTIC_LOOP · 训练计划"];
+    diet_rag [label="diet_rag\nRAG · 营养知识"];
+    diet_llm [label="diet_llm\nLLM · 饮食计划"];
+    end  [label="end\nEND"];
+
+    start -> classify [label="STATIC"];
+    classify -> analysis_query [label="LLM_DYNAMIC", color="#1565c0", fontcolor="#1565c0"];
+    classify -> measure_parse [label="LLM_DYNAMIC", color="#1565c0", fontcolor="#1565c0"];
+    classify -> plan [label="LLM_DYNAMIC", color="#1565c0", fontcolor="#1565c0"];
+    analysis_query -> analysis_rag [label="STATIC"];
+    analysis_rag -> analysis_llm [label="STATIC"];
+    analysis_llm -> analysis_adjust [label="COND trend='DOWN'", color="#e65100", fontcolor="#e65100"];
+    analysis_llm -> end [label="COND else", color="#e65100", fontcolor="#e65100"];
+    analysis_adjust -> end [label="STATIC"];
+    measure_parse -> measure_llm [label="STATIC"];
+    measure_llm -> measure_lose [label="COND fat='HIGH'", color="#e65100", fontcolor="#e65100"];
+    measure_llm -> end [label="COND else", color="#e65100", fontcolor="#e65100"];
+    measure_lose -> end [label="STATIC"];
+    plan -> diet_rag [label="STATIC"];
+    diet_rag -> diet_llm [label="STATIC"];
+    diet_llm -> end [label="STATIC"];
+}

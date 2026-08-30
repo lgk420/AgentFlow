@@ -1,0 +1,16 @@
+{
+  "id": "bad-llm-dyn-label",
+  "name": "LLM_DYNAMIC边缺label",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "analysis": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "analysis", "type": "LLM_DYNAMIC" },
+    { "from": "analysis", "to": "end", "type": "STATIC" }
+  ]
+}

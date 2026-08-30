@@ -1,0 +1,15 @@
+digraph bad_edge_ref {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    classify [label="classify"];
+    end  [label="end\nEND"];
+    missing [label="missing\n(❓ 未定义)", fillcolor="#ffcccc", color="red"];
+
+    start -> classify [label="STATIC"];
+    classify -> end [label="STATIC"];
+    classify -> missing [label="STATIC → 不存在", color="red", fontcolor="red", penwidth=2];
+}

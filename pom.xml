@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.agentflow</groupId>
+    <artifactId>agentflow</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>AgentFlow</name>
+    <description>轻量级 Agent DAG 编排引擎</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Testcontainers 用 1.x 稳定线：2.x 将模块重命名为 testcontainers-* 且移除了 redis 模块；
+             对本项目（容器化 redis/postgres 测试）1.21.4 是久经考验、文档最全的选择 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
+    </properties>
+
+    <!-- Spring-AI BOM：P4 LLM 接入引入（多 provider 的 ChatModel 由 Spring AI autoconfiguration 提供） -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>1.0.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- P0：核心基础设施 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- 工具参数 / 结构化输出 schema 校验（T5.3 起用）。
+             1.1.0 → 1.5.7（T5.5）：MCP SDK 0.15.0 需 networknt 1.5.7（同 1.x API 家族，兼容），
+             升到 1.5.7 保持 ToolSchemaValidator 不变；不升 2.0.0（那是完全重写的 API，见 pom MCP 注释） -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>1.5.7</version>
+        </dependency>
+
+        <!-- P4：LLM 网关（默认 OpenAI 兼容 provider——DeepSeek / Qwen 同一端点形态；切回本地 Ollama 时换成 spring-ai-starter-model-ollama） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <!-- P6：向量检索核心抽象（VectorStore / SearchRequest，T6.1） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-vector-store</artifactId>
+        </dependency>
+
+        <!-- P6：pgvector 向量存储（T6.2，VectorStore bean 来源，自动建表）+ 本地嵌入模型（Ollama EmbeddingModel，bge-m3）。
+             嵌入走 Ollama 本地（离线免 key 无 GPU，见 QA 65/66）；聊天仍走 OpenAI 兼容 provider，
+             双 provider 靠 spring.ai.model.chat / embedding 显式选择（两边 autoconfig 都 matchIfMissing=true，
+             不设会双 ChatModel 启动炸，T6.2 决策） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-ollama</artifactId>
+        </dependency>
+
+        <!-- pg 驱动（P6 RAG 用；版本由 Spring Boot BOM 管理） -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- T5.5：MCP 客户端（官方 Java SDK，协议标准客户端；McpConnector 薄封装，见 QA 58）。
+             用 mcp-core + mcp-json-jackson2（Jackson 2 实现）而非 mcp 聚合件（聚合件拉 jackson3 + networknt 3.0.0，与项目 Jackson 2 冲突）。
+             版本卡 0.15.0：1.x 起 MCP SDK 把 networknt 升到 2.0.0（完全重写 API，需重写 ToolSchemaValidator）；
+             0.15.0 用 networknt 1.5.7（与项目 1.x API 兼容），是能用 1.x networknt 的最后一个版本 -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+            <version>0.15.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+            <version>0.15.0</version>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers 已移除 redis 便捷模块（org.testcontainers:redis 在 Maven Central 不存在），
+             后续 Redis 容器测试用核心模块 GenericContainer 实现 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

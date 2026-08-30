@@ -1,0 +1,15 @@
+{
+  "id": "bad-edge-to-start",
+  "name": "有边指向START",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "start", "type": "STATIC" },
+    { "from": "classify", "to": "end", "type": "STATIC" }
+  ]
+}

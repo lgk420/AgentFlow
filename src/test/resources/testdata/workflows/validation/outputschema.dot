@@ -1,0 +1,13 @@
+digraph bad_outputschema {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    query [label="query\nTOOL · 非法带 outputSchema", fillcolor="#ffcccc", color="red"];
+    end [label="end\nEND"];
+
+    start -> query [label="STATIC"];
+    query -> end [label="STATIC"];
+}

@@ -1,0 +1,15 @@
+digraph bad_two_start {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start  [label="start\nSTART"];
+    start2 [label="start2\nSTART（多出来）", fillcolor="#ffcccc", color="red"];
+    classify [label="classify"];
+    end [label="end\nEND"];
+
+    start -> classify [label="STATIC"];
+    start2 -> classify [label="STATIC", color="red", fontcolor="red", penwidth=2];
+    classify -> end [label="STATIC"];
+}

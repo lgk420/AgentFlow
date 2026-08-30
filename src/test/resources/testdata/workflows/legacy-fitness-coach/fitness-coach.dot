@@ -1,0 +1,29 @@
+digraph daily_coach {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei", bgcolor="white"];
+    node  [shape=box, style="rounded,filled", fontname="Microsoft YaHei", fontsize=11, penwidth=1.2];
+    edge  [fontname="Microsoft YaHei", fontsize=9];
+
+    start  [label="start\nSTART", shape=ellipse, fillcolor="#edf2f7", color="#4a5568"];
+    parse  [label="N1 parse\nLLM · 解析日志", fillcolor="#cfe8ff", color="#2b6cb0"];
+    store  [label="N2 store\nTOOL · 存储+轮换校验", fillcolor="#ffe0e0", color="#c53030", penwidth=2.0];
+    history_query [label="N3a history_query\nTOOL · 历史检索", fillcolor="#d4f5d4", color="#2f855a"];
+    kb_retrieve [label="N3b kb_retrieve\nRAG · 知识检索", fillcolor="#ffe9c7", color="#c05621"];
+    accessory [label="N4 accessory\nLLM · 附属推荐", fillcolor="#cfe8ff", color="#2b6cb0"];
+    metrics [label="N5 metrics\nTOOL · 指标计算", fillcolor="#d4f5d4", color="#2f855a"];
+    route [label="N6 route\nLLM · 全局路由", fillcolor="#ffe3b0", color="#b7791f"];
+    report [label="N7 report\nAGENTIC_LOOP · 双报告", fillcolor="#e9d8fd", color="#6b46c1"];
+    end  [label="end\nEND", shape=ellipse, fillcolor="#edf2f7", color="#4a5568"];
+
+    start -> parse [label="STATIC"];
+    parse -> store [label="STATIC"];
+    store -> history_query [label="STATIC"];
+    store -> kb_retrieve [label="STATIC"];
+    history_query -> accessory [label="STATIC"];
+    history_query -> metrics [label="STATIC"];
+    kb_retrieve -> report [label="STATIC"];
+    accessory -> route [label="STATIC"];
+    metrics -> route [label="STATIC"];
+    route -> report [label="STATIC"];
+    report -> end [label="STATIC"];
+}

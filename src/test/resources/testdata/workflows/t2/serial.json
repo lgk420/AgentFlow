@@ -1,0 +1,14 @@
+{
+  "id": "t2-serial",
+  "name": "T2 串行链",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "a": { "type": "LLM", "model": "qwen-plus", "prompt": "p", "stubOutput": { "x": "a-输出" } },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "a", "type": "STATIC" },
+    { "from": "a", "to": "end", "type": "STATIC" }
+  ]
+}

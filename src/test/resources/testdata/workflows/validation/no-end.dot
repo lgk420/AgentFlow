@@ -1,0 +1,11 @@
+digraph bad_no_end {
+    rankdir=TB;
+    graph [fontname="Microsoft YaHei"];
+    node  [shape=box, style="rounded,filled", fillcolor="#eef2f7", fontname="Microsoft YaHei"];
+    edge  [fontname="Microsoft YaHei", fontsize=10];
+
+    start [label="start\nSTART"];
+    classify [label="classify\n(没有 END 收敛)", fillcolor="#ffcccc", color="red"];
+
+    start -> classify [label="STATIC"];
+}

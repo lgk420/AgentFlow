@@ -1,0 +1,14 @@
+{
+  "id": "bad-edge-config",
+  "name": "STATIC边带condition",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "end", "type": "STATIC", "condition": "{{nodes.classify.output.x}} == 1" }
+  ]
+}

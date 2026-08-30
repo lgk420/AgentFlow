@@ -1,0 +1,19 @@
+{
+  "id": "bad-outputschema",
+  "name": "TOOL节点带outputSchema",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "query": {
+      "type": "TOOL",
+      "tool": "workout_log_query",
+      "inputs": { "muscle_group": "背" },
+      "outputSchema": { "type": "object" }
+    },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "query", "type": "STATIC" },
+    { "from": "query", "to": "end", "type": "STATIC" }
+  ]
+}

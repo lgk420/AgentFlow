@@ -1,0 +1,14 @@
+{
+  "id": "bad-cond-malformed",
+  "name": "condition结构非法",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "classify": { "type": "LLM", "model": "qwen-plus", "prompt": "p" },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+    { "from": "classify", "to": "end", "type": "CONDITIONAL", "condition": "{{{nodes.x}} == 1" }
+  ]
+}

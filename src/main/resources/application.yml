@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: agentflow
+  jackson:
+    deserialization:
+      # DSL 坏配置尽早暴露：顶层 / 边字段拼错立即解析报错（GraphValidator 仍负责白名单结构校验，见 DSL使用说明 7）
+      fail-on-unknown-properties: true
+  ai:
+    # 多 provider 选择（T6.2）：聊天走 OpenAI 兼容（DeepSeek），嵌入走本地 Ollama。
+    # 两边 chat/embedding autoconfig 都 matchIfMissing=true——不显式选会双 ChatModel 并存启动炸（T6.2 验证）。
+    # 聊天要切本地 Ollama 离线演示：改 model.chat=ollama 即可（需 ollama 拉聊天模型，如 qwen2.5:7b）。
+    model:
+      chat: openai
+      embedding: ollama
+    openai:
+      # 聊天 provider：OpenAI 兼容（DeepSeek / Qwen 同一端点形态，换 base-url/model/api-key 即可）
+      # OpenAI 兼容 base——Spring AI 会自动追加 /v1/chat/completions，所以这里不能带 /v1 或 /anthropic 等路径后缀（否则 404）
+      base-url: ${LLM_BASE_URL:https://api.deepseek.com}
+      # OpenAI 自动配置要求 key 非空才建 bean；dummy 仅让无 key 时上下文能起（真实 key 由环境变量 LLM_API_KEY 覆盖）
+      api-key: ${LLM_API_KEY:sk-no-key-set}
+      chat:
+        options:
+          model: ${LLM_MODEL:deepseek-v4-flash}
+    ollama:
+      # 嵌入 provider（T6.2）：本地 Ollama，bge-m3（中英双语，1024 维，CPU 可跑，QA 65/66）。
+      # 起 Docker：docker compose --profile local-llm up -d && docker compose --profile local-llm exec ollama ollama pull bge-m3
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      embedding:
+        options:
+          model: ${OLLAMA_EMBEDDING_MODEL:bge-m3}
+    vectorstore:
+      pgvector:
+        # T6.2：pgvector 向量存储（compose 的 pgvector/pgvector:pg16）。
+        # dimensions 必须 = 嵌入模型维度（bge-m3=1024），配错检索会报维度错误；
+        # initialize-schema=true → 启动自动建表（需 postgres 在线，PgVectorStore.afterPropertiesSet 执行）。
+        dimensions: 1024
+        index-type: HNSW
+        initialize-schema: true
+  datasource:
+    # T6.2：pgvector 数据源（compose postgres，env 可覆盖）
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/agentflow}
+    username: ${POSTGRES_USER:agentflow}
+    password: ${POSTGRES_PASSWORD:agentflow}
+  data:
+    redis:
+      # WSL2 环境：容器跑在 WSL 里，Windows 侧通过 localhost 转发访问
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+server:
+  port: ${SERVER_PORT:8080}
+
+core:
+  executor:
+    # 就绪度调度并发线程数（wave 批派发，见架构 6.6）
+    parallelism: 4
+
+# T5.5：MCP 服务器列表（来源③，McpToolSynchronizer 启动时逐个连接注册工具）。
+# 默认注释掉——保持应用启动轻量（不拉子进程）；需要演示 MCP 工具时解开，改名前缀即可。
+# 字段：name（服务器名）/ command+args（stdio 启动命令，${java.class.path} 由 McpConnector 解析为当前 JVM classpath）
+#       / prefix（工具名前缀，防与内置 @AgentTool 重名）。
+# 连接失败打 warning 跳过，不阻断启动（失败不阻断，T5.5 决策）。
+# 测试不依赖此配置（McpConnectorIntegrationTest 手动构造同样参数）。
+#agentflow:
+#  mcp:
+#    servers:
+#      - name: demo-calc
+#        command: java
+#        args: ["-cp", "${java.class.path}", "com.agentflow.tool.mcp.demo.McpDemoServerMain"]
+#        prefix: "demo_"
