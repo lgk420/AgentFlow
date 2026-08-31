@@ -40,6 +40,11 @@ public final class Streams {
      */
     public static final String TRACE_WRITER = "trace-writer";
 
+    /**
+     * 死信流（T7.5）：重试耗尽的消息 + 错误栈，供人工排查/告警。
+     */
+    public static final String DLQ = "agentflow:dlq";
+
     private Streams() {
     }
 }

@@ -1,7 +1,13 @@
 package com.agentflow.api;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
+import com.agentflow.runtime.queue.EventBus;
+import com.agentflow.runtime.queue.EventMessage;
+import com.agentflow.runtime.queue.Events;
+import com.agentflow.runtime.queue.Streams;
 import com.agentflow.tool.annotation.AgentTool;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
@@ -19,6 +25,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -46,13 +54,20 @@ class RunApiTest {
                     .withExposedPorts(6379);
 
     @DynamicPropertySource
-    static void redisProps(DynamicPropertyRegistry registry) {
+    static void props(DynamicPropertyRegistry registry) {
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+        // T7.3 事件驱动：关掉 workers（API 契约测试隔离）；POST 无消费 → 短轮询超时返回 RUNNING
+        registry.add("core.event-driven.enabled", () -> "false");
+        registry.add("core.run.poll-timeout-ms", () -> "300");
+        registry.add("core.run.poll-interval-ms", () -> "30");
     }
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private EventBus eventBus;
 
     @TestConfiguration
     static class MockToolsConfig {
@@ -82,30 +97,38 @@ class RunApiTest {
     }
 
     @Test
-    void submitRun_thenQuerySucceeded() throws Exception {
-        // 先存一张 P2 可执行的图（t2/parallel：TOOL + STATIC，能过校验）
+    void submitRun_writesCheckpointAndPublishesRunStarted() throws Exception {
+        // 先存一张可执行的图（t2/parallel：TOOL + STATIC，能过校验）
         mockMvc.perform(post("/api/v1/workflows")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(readResource("/testdata/workflows/t2/parallel.json")))
                 .andExpect(status().isCreated());
 
-        String runBody = """
-                { "workflowId": "t2-parallel", "inputs": { "userMessage": "hi" } }
-                """;
+        // T7.3 事件驱动：POST 写 RUNNING checkpoint + publish RunStarted；本测试无 worker 消费 → 轮询超时返回 RUNNING
         MvcResult result = mockMvc.perform(post("/api/v1/runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(runBody))
+                        .content("""
+                                { "workflowId": "t2-parallel", "inputs": { "userMessage": "hi" } }
+                                """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.runId").exists())
                 .andReturn();
 
         String runId = JsonPath.read(result.getResponse().getContentAsString(), "$.runId");
 
+        // RunStarted 已发布到 agentflow:run（run-worker 消费前的契约验证）
+        List<EventMessage> events = eventBus.read(Streams.RUN, Streams.RUN_WORKER, "test-consumer", 10, 200);
+        assertThat(events).isNotEmpty();
+        assertThat(events.get(0).payload()).containsEntry(Events.TYPE_FIELD, Events.RunStarted.TYPE)
+                .containsEntry("runId", runId)
+                .containsEntry("workflowId", "t2-parallel");
+        assertThat(events.get(0).payload().get("inputs")).isEqualTo(Map.of("userMessage", "hi"));
+
+        // GET 能查到初始 RUNNING 状态
         mockMvc.perform(get("/api/v1/runs/" + runId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.nodeOutputs.tool1.status").value("SUCCEEDED"));
+                .andExpect(jsonPath("$.status").value("RUNNING"));
     }
 
     @Test

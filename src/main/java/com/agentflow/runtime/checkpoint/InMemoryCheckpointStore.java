@@ -4,14 +4,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import com.agentflow.core.state.WorkflowState;
-import org.springframework.stereotype.Component;
 
 /**
- * P2 内存版 checkpoint 存储：ConcurrentHashMap，save/load 都走 {@link WorkflowState#snapshot()}。
+ * 内存版 checkpoint 存储：ConcurrentHashMap，save/load 都走 {@link WorkflowState#snapshot()}。
  *
- * <p>P3 由 Redis 实现替换（同接口），本类保留作测试/降级用途。
+ * <p>T7.3 起由 {@link RedisCheckpointStore} 作为 Spring bean（事件驱动需多 worker 共享状态），
+ * 本类**不再是 @Component**，仅测试/单测直接 {@code new} 使用（避免双 bean 歧义）。
  */
-@Component
 public class InMemoryCheckpointStore implements CheckpointStore {
 
     private final ConcurrentMap<String, WorkflowState> store = new ConcurrentHashMap<>();

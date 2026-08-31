@@ -9,7 +9,7 @@
 - **工具注册中心**：一套 JSON Schema 两用（喂 LLM 的函数定义 + 入参校验），支持 `@AgentTool` 注解扫描、动态注册 API、MCP 协议对齐
 - **RAG 作为图内节点**：pgvector + 本地嵌入模型（bge-m3）+ collection 多库隔离 + 灌库 API，与整图调度解耦
 - **三层测试策略**：打桩单测 / Testcontainers 集成 / 真实模型（Ollama）端到端
-- **事件驱动改造（进行中）**：EventBus + Redis Streams，at-least-once 投递 + 幂等消费
+- **事件驱动改造**：EventBus + Redis Streams，at-least-once 投递 + 幂等消费 + 死信（可平迁 Kafka）
 
 ## 架构总览
 
@@ -107,11 +107,11 @@ curl -X POST localhost:8080/api/v1/collections/workout_kb/documents \
 | P0 | 环境骨架（docker-compose / Testcontainers） | ✅ |
 | P1 | 领域模型 + DSL（图解析 / 校验 / 模板） | ✅ |
 | P2 | 同步执行引擎（就绪度调度 / 条件路由 / 重试） | ✅ |
-| P3 | Checkpoint 与恢复（Redis 版，当前为 InMemory） | ⬜ 未做（是 P7 事件驱动的前置） |
+| P3 | Checkpoint 与恢复 | ✅ 已并入 P7（RedisCheckpointStore 落地；恢复由 at-least-once + 幂等覆盖） |
 | P4 | LLM 接入 + 手写 Agentic Loop + 动态路由 | ✅ |
 | P5 | 工具注册中心 + MCP | ✅ |
 | P6 | RAG 节点（pgvector + 本地嵌入 + 灌库） | ✅ |
-| P7 | 事件驱动改造（EventBus + Redis Streams） | 🔄 进行中（T7.1/T7.2 完成） |
+| P7 | 事件驱动改造（EventBus + Redis Streams） | ✅（T7.1-T7.6：事件驱动执行 + 幂等 + 死信） |
 | P8 | Trace + Eval | ⬜ |
 | P9 | Demo 打磨 | ⬜ |
 

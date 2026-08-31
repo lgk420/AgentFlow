@@ -2,7 +2,9 @@ package com.agentflow.core.state;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 一次运行的可变状态 = checkpoint 的内存形态（架构 5.4）。
@@ -63,6 +65,17 @@ public class WorkflowState {
      */
     private String error;
 
+    /**
+     * T7.3 事件驱动：节点 → 出边解析结果（{目标: 是否 fired}）。
+     * 节点执行完成（或死分支）时记录，就绪集从这些事实重算（不存可变计数器，QA 79）。
+     */
+    private Map<String, Map<String, Boolean>> resolvedEdges = new LinkedHashMap<>();
+
+    /**
+     * T7.3 事件驱动：死分支节点集合（所有入边都未 fired，不执行、出边按死边级联）。
+     */
+    private Set<String> deadNodes = new LinkedHashSet<>();
+
     public WorkflowState() {
     }
 
@@ -81,6 +94,9 @@ public class WorkflowState {
         copy.createdAt = createdAt;
         copy.updatedAt = updatedAt;
         copy.error = error;
+        // T7.3：resolvedEdges 内层 Map 也复制，防引用污染
+        resolvedEdges.forEach((node, resolutions) -> copy.resolvedEdges.put(node, new LinkedHashMap<>(resolutions)));
+        copy.deadNodes = new LinkedHashSet<>(deadNodes);
         return copy;
     }
 
@@ -154,5 +170,21 @@ public class WorkflowState {
 
     public void setError(String error) {
         this.error = error;
+    }
+
+    public Map<String, Map<String, Boolean>> getResolvedEdges() {
+        return resolvedEdges;
+    }
+
+    public void setResolvedEdges(Map<String, Map<String, Boolean>> resolvedEdges) {
+        this.resolvedEdges = resolvedEdges;
+    }
+
+    public Set<String> getDeadNodes() {
+        return deadNodes;
+    }
+
+    public void setDeadNodes(Set<String> deadNodes) {
+        this.deadNodes = deadNodes;
     }
 }

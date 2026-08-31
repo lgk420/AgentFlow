@@ -63,6 +63,13 @@ core:
   executor:
     # 就绪度调度并发线程数（wave 批派发，见架构 6.6）
     parallelism: 4
+  run:
+    # T7.3 事件驱动：POST /runs 发布 RunStarted 后轮询 checkpoint 到终态的配置
+    poll-timeout-ms: 60000
+    poll-interval-ms: 100
+  event-driven:
+    # T7.5：进程级处理失败的重投次数上限，超限进死信（agentflow:dlq）
+    max-retries: 3
 
 # T5.5：MCP 服务器列表（来源③，McpToolSynchronizer 启动时逐个连接注册工具）。
 # 默认注释掉——保持应用启动轻量（不拉子进程）；需要演示 MCP 工具时解开，改名前缀即可。

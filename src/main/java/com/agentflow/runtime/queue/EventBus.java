@@ -11,7 +11,14 @@ import java.util.Map;
  *
  * <p>轮询式而非订阅式（QA 71）：消费端（T7.3 node-worker）本就是显式工作循环
  * （read→执行→ack→下一批），轮询式把 ACK 时机、批次、阻塞时长都握在调用方手里。
- * 换实现（Kafka 等）只动实现类（T7.6），接口不变。
+ *
+ * <p><b>换 Kafka（T7.6 替换点）</b>：接口是纯语义抽象，换实现只动实现类。Kafka 对应关系：
+ * <pre>{@code
+ * publish(topic, payload)  → KafkaTemplate.send(topic, JSON(payload))   // 生产
+ * read(topic, group, ...)  → KafkaConsumer.subscribe(topic) + poll()    // group = 消费组
+ * ack(topic, group, msgId) → consumer.commitSync()                      // 手动提交位移
+ * }</pre>
+ * Kafka 的消费组/位移与 Redis Streams 的组/PEL 语义等价（QA 70），换过去只写一个 {@code KafkaEventBus} 实现类。
  */
 public interface EventBus {
 
