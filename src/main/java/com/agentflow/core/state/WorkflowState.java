@@ -13,7 +13,7 @@ import java.util.Set;
  * <ul>
  *   <li>{@code runId}：一次运行的唯一标识；</li>
  *   <li>{@code nodeOutputs}：nodeId → 节点执行结果，模板引用 {@code {{nodes.x.output.y}}} 从这里取；</li>
- *   <li>{@code version}：乐观并发控制（CAS），P3 落 Redis 时使用，P2 先占位。</li>
+ *   <li>{@code version}：乐观并发控制版本号（Bug 08），由 {@code CheckpointStore#update} 维护。</li>
  * </ul>
  *
  * <p>按 QA 07 决策用传统 POJO。
@@ -46,7 +46,8 @@ public class WorkflowState {
     private Map<String, NodeOutput> nodeOutputs = new LinkedHashMap<>();
 
     /**
-     * 乐观并发控制版本号（P3 CAS 用，P2 先占位）。
+     * 乐观并发控制版本号（Bug 08）：多 worker 并发写同一 run 时用于 CAS 提交。
+     * <b>由 {@code CheckpointStore} 实现维护，调用方不要自行设置。</b>
      */
     private int version;
 

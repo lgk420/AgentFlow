@@ -70,7 +70,7 @@ public class RunApi {
         state.setStatus(RunStatus.RUNNING);
         state.setCreatedAt(Instant.now());
         state.setUpdatedAt(Instant.now());
-        checkpointStore.save(state);
+        checkpointStore.create(state);
 
         eventBus.publish(Streams.RUN, codec.toPayload(Events.RunStarted.of(runId, wf.getId(), state.getInputs())));
 

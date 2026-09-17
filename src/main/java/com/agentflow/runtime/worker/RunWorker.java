@@ -1,12 +1,12 @@
 package com.agentflow.runtime.worker;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import com.agentflow.core.model.NodeType;
 import com.agentflow.core.model.WorkflowDefinition;
 import com.agentflow.core.state.RunStatus;
-import com.agentflow.core.state.WorkflowState;
 import com.agentflow.core.store.WorkflowStore;
 import com.agentflow.runtime.checkpoint.CheckpointStore;
 import com.agentflow.runtime.queue.EventBus;
@@ -98,15 +98,28 @@ public class RunWorker implements ApplicationRunner {
         eventBus.publish(Streams.NODE, codec.toPayload(Events.NodeReady.of(runId, startId)));
     }
 
+    /**
+     * 运行级失败收尾。
+     *
+     * <p>终态守卫（Bug 08）与 NodeWorker 一致：FAILED 优先，且只有真的发生跃迁才发 RunCompleted，
+     * 避免与并发推进的 node-worker 抢着写终态、重复发事件。
+     */
     private void failRun(String runId, String error) {
-        WorkflowState state = checkpointStore.load(runId);
-        if (state == null) {
-            return;
+        if (checkpointStore.load(runId) == null) {
+            return; // checkpoint 尚未建立（RunStarted 早于初始快照到达），无处可写
         }
-        state.setError(error);
-        state.setStatus(RunStatus.FAILED);
-        checkpointStore.save(state);
-        eventBus.publish(Streams.RUN, codec.toPayload(Events.RunCompleted.of(runId, RunStatus.FAILED.name(), error)));
+        boolean transitioned = checkpointStore.update(runId, fresh -> {
+            fresh.setError(error);
+            fresh.setUpdatedAt(Instant.now());
+            if (fresh.getStatus() == RunStatus.FAILED) {
+                return false; // 已经是 FAILED，不重复发事件
+            }
+            fresh.setStatus(RunStatus.FAILED);
+            return true;
+        });
+        if (transitioned) {
+            eventBus.publish(Streams.RUN, codec.toPayload(Events.RunCompleted.of(runId, RunStatus.FAILED.name(), error)));
+        }
     }
 
     private static String consumerName() {

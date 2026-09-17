@@ -109,7 +109,7 @@ class NodeWorkerIdempotencyTest {
         state.setWorkflowId("idem-wf");
         state.setInputs(Map.of());
         state.setStatus(RunStatus.RUNNING);
-        checkpointStore.save(state);
+        checkpointStore.create(state);
     }
 
     private static EventMessage nodeReady(String runId, String nodeId) {

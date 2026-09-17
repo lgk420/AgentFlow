@@ -8,6 +8,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -80,7 +81,7 @@ public class WorkflowExecutor {
         state.setInputs(inputs == null ? new LinkedHashMap<>() : new LinkedHashMap<>(inputs));
         state.setCreatedAt(Instant.now());
         state.setUpdatedAt(Instant.now());
-        checkpointStore.save(state);
+        checkpointStore.create(state);
 
         GraphState graph = new GraphState();
         Map<String, List<String>> inEdges = new HashMap<>();
@@ -132,7 +133,7 @@ public class WorkflowExecutor {
                 }
                 state.getNodeOutputs().put(r.nodeId,
                         new NodeOutput(r.nodeId, r.output, null, NodeStatus.SUCCEEDED));
-                checkpointStore.save(state);
+                persist(state);
 
                 List<EdgeDefinition> outEdges = graph.outEdges.getOrDefault(r.nodeId, List.of());
                 // LLM_DYNAMIC（T4.4）：若存在，先调 LlmRouter 一次拿选中目标，选中边触发、其余候选死分支
@@ -244,8 +245,26 @@ public class WorkflowExecutor {
     private WorkflowState finish(WorkflowState state, RunStatus status) {
         state.setStatus(status);
         state.setUpdatedAt(Instant.now());
-        checkpointStore.save(state);
+        persist(state);
         return state;
+    }
+
+    /**
+     * 把本地 state 镜像进 checkpoint（同步路径专用）。
+     *
+     * <p>同步路径由调度线程独占该 run、不存在并发写，所以这里用 {@code update} 把本地快照整体镜像过去，
+     * 而不是逐字段增量。事件驱动的并发写走 {@code NodeWorker}，那里是真正的增量提交（Bug 08）。
+     */
+    private void persist(WorkflowState state) {
+        checkpointStore.update(state.getRunId(), fresh -> {
+            fresh.setStatus(state.getStatus());
+            fresh.setError(state.getError());
+            fresh.setUpdatedAt(state.getUpdatedAt());
+            fresh.setNodeOutputs(new LinkedHashMap<>(state.getNodeOutputs()));
+            fresh.setResolvedEdges(new LinkedHashMap<>(state.getResolvedEdges()));
+            fresh.setDeadNodes(new LinkedHashSet<>(state.getDeadNodes()));
+            return null;
+        });
     }
 
     /**

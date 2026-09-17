@@ -2,6 +2,9 @@ package com.agentflow.runtime.checkpoint;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.agentflow.core.state.NodeOutput;
 import com.agentflow.core.state.NodeStatus;
@@ -63,7 +66,7 @@ class RedisCheckpointStoreTest {
         state.setUpdatedAt(Instant.parse("2026-08-31T10:01:00Z"));
         state.setError("运行失败示例");
 
-        store.save(state);
+        store.create(state);
 
         WorkflowState loaded = store.load("run-1");
         assertThat(loaded).isNotNull();
@@ -80,5 +83,67 @@ class RedisCheckpointStoreTest {
     @Test
     void load_missing_returnsNull() {
         assertThat(store.load("no-such-run")).isNull();
+    }
+
+    @Test
+    void update_incrementsVersion_andRoundTripsIt() {
+        WorkflowState state = new WorkflowState();
+        state.setRunId("run-v");
+        store.create(state);
+        assertThat(store.load("run-v").getVersion()).isZero();
+
+        store.update("run-v", fresh -> {
+            fresh.getNodeOutputs().put("a", new NodeOutput("a", "a-out", null, NodeStatus.SUCCEEDED));
+            return null;
+        });
+
+        WorkflowState after = store.load("run-v");
+        assertThat(after.getVersion()).isEqualTo(1);
+        assertThat(after.getNodeOutputs()).containsKey("a");
+    }
+
+    /** 强制两个写者都「已 load、未提交」后再提交：CAS 必须让后提交者重试，而不是静默覆盖。 */
+    @Test
+    void update_forcedConflict_keepsBothFacts() throws Exception {
+        WorkflowState s = new WorkflowState();
+        s.setRunId("run-c");
+        store.create(s);
+
+        CountDownLatch bothLoaded = new CountDownLatch(2);
+        AtomicInteger mutatorCalls = new AtomicInteger();
+
+        Runnable writerA = () -> store.update("run-c", fresh -> {
+            awaitFirstRound(mutatorCalls, bothLoaded);
+            fresh.getNodeOutputs().put("a", new NodeOutput("a", "ao", null, NodeStatus.SUCCEEDED));
+            return null;
+        });
+        Runnable writerB = () -> store.update("run-c", fresh -> {
+            awaitFirstRound(mutatorCalls, bothLoaded);
+            fresh.getNodeOutputs().put("b", new NodeOutput("b", "bo", null, NodeStatus.SUCCEEDED));
+            return null;
+        });
+
+        Thread t1 = new Thread(writerA);
+        Thread t2 = new Thread(writerB);
+        t1.start();
+        t2.start();
+        t1.join(10_000);
+        t2.join(10_000);
+
+        WorkflowState after = store.load("run-c");
+        assertThat(after.getNodeOutputs()).containsKeys("a", "b");
+        assertThat(after.getVersion()).isEqualTo(2); // 两次提交串行化，没有谁被静默吞掉
+    }
+
+    /** 前两次调用（两个写者各自的首次）在栅栏上等齐；重试调用不再等待，避免死等。 */
+    private static void awaitFirstRound(AtomicInteger mutatorCalls, CountDownLatch bothLoaded) {
+        if (mutatorCalls.getAndIncrement() < 2) {
+            bothLoaded.countDown();
+            try {
+                bothLoaded.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }

@@ -41,7 +41,11 @@ import org.springframework.stereotype.Component;
  * 执行节点 → 更新 checkpoint → {@link GraphRuntime} 算就绪集 → 发下游 NodeReady / 到 END 完成运行 → ACK。
  *
  * <p>失败不 ACK（留在 PEL 重投，at-least-once）；节点已执行/已死则跳过（幂等，checkpoint 事实兜底）。
- * 单 worker 下事件顺序处理，无并发 checkpoint 写；多 worker 并发写由 T7.4 处理。
+ *
+ * <p><b>多 worker 并发（Bug 08）</b>：同一 run 的就绪节点可能落到不同实例，checkpoint 是共享可写文档。
+ * 修正点是「节点输出 + 出边解析结果在<b>一次</b> {@code update} 里原子提交，且就绪性基于那份最新快照推导」。
+ * 注意 T7.4 的幂等键防的是<b>重复</b>（同一节点执行两次），防不住<b>丢失</b>（不同节点互相覆盖）——
+ * 早期 javadoc 声称「多 worker 并发写由 T7.4 处理」是错的。
  */
 @Component
 @ConditionalOnProperty(name = "core.event-driven.enabled", havingValue = "true", matchIfMissing = true)
@@ -113,7 +117,9 @@ public class NodeWorker implements ApplicationRunner {
         if (state == null) {
             throw new IllegalStateException("checkpoint 不存在: " + runId);
         }
-        // 幂等①：已执行/已死节点直接跳过（checkpoint 事实兜底）
+        // 幂等①：已执行/已死节点直接跳过（checkpoint 事实兜底）。
+        // 这是「便宜短路」：真正的守卫是 update 提交时基于最新快照的判断，见下方注释
+        // （Bug 08：这里的读与后面的执行之间，别的 worker 完全可能已经推进）
         if (state.getNodeOutputs().containsKey(nodeId) || state.getDeadNodes().contains(nodeId)) {
             return;
         }
@@ -133,19 +139,31 @@ public class NodeWorker implements ApplicationRunner {
         try {
             output = executeNodeWithRetry(nodeId, wf, state);
         } catch (Exception e) {
-            failRun(state, nodeId, e);
+            failRun(runId, nodeId, e);
             return;
         }
 
-        state.getNodeOutputs().put(nodeId, new NodeOutput(nodeId, output, null, NodeStatus.SUCCEEDED));
-        checkpointStore.save(state);
+        // LLM_DYNAMIC 路由先算一次：它是整条推导链里唯一会调 LLM 的一步，放进 CAS 重试循环
+        // 会「冲突一次重调一次 LLM」。它只依赖本节点输出 + 出边定义，与并发无关，所以提前算安全（Bug 08）
+        String dynamicTarget;
+        try {
+            dynamicTarget = graphRuntime.routeDynamic(nodeId, wf, output);
+        } catch (Exception e) {
+            failRun(runId, nodeId, e); // 路由失败按节点失败收尾，否则事件被 ACK 后 run 会永远停在 RUNNING
+            return;
+        }
 
-        List<String> ready = graphRuntime.resolveOutEdges(nodeId, wf, state, false);
-        checkpointStore.save(state); // 边解析结果持久化
+        // Bug 08 核心：节点输出 + 出边解析结果在「一次」update 里原子提交，且 ready 基于 mutator 收到的
+        // 那份最新快照推导。之前是两次整份覆盖 save、且 ready 用旧快照算好再搬过去——fan-in 时两个 worker
+        // 各自在旧快照里看不到对方的入边解析结果，于是谁都不发下游 NodeReady，run 卡死
+        List<String> ready = checkpointStore.update(runId, fresh -> {
+            fresh.getNodeOutputs().put(nodeId, new NodeOutput(nodeId, output, null, NodeStatus.SUCCEEDED));
+            return graphRuntime.resolveOutEdges(nodeId, wf, fresh, false, dynamicTarget);
+        });
 
         for (String next : ready) {
             if (wf.getNodes().get(next).getType() == NodeType.END) {
-                completeRun(state, wf, next);
+                completeRun(runId, wf, next);
             } else {
                 eventBus.publish(Streams.NODE, codec.toPayload(Events.NodeReady.of(runId, next)));
             }
@@ -228,22 +246,57 @@ public class NodeWorker implements ApplicationRunner {
 
     /**
      * 节点失败 → run FAILED：节点标记 FAILED + 运行级 error + 发 RunCompleted(FAILED)。
+     *
+     * <p>终态守卫（Bug 08）：<b>FAILED 优先</b>——SUCCEEDED 只在当前为 RUNNING 时写，FAILED 可覆盖 SUCCEEDED。
+     * 否则 diamond 里「X 先到 END 判成功、同批的 Y 随后失败被挡掉」就会假成功。
+     * 只有真的发生终态跃迁才发 RunCompleted，顺带消掉重复事件。
      */
-    private void failRun(WorkflowState state, String nodeId, Exception cause) {
-        state.getNodeOutputs().put(nodeId,
-                new NodeOutput(nodeId, null, cause.getMessage(), NodeStatus.FAILED));
-        state.setError("节点执行失败：" + nodeId + "：" + cause.getMessage());
-        state.setStatus(RunStatus.FAILED);
-        state.setUpdatedAt(Instant.now());
-        checkpointStore.save(state);
-        eventBus.publish(Streams.RUN,
-                codec.toPayload(Events.RunCompleted.of(state.getRunId(), RunStatus.FAILED.name(), state.getError())));
+    private void failRun(String runId, String nodeId, Exception cause) {
+        String message = "节点执行失败：" + nodeId + "：" + cause.getMessage();
+        boolean transitioned = checkpointStore.update(runId, fresh -> {
+            fresh.getNodeOutputs().put(nodeId,
+                    new NodeOutput(nodeId, null, cause.getMessage(), NodeStatus.FAILED));
+            fresh.setError(message);
+            fresh.setUpdatedAt(Instant.now());
+            if (fresh.getStatus() == RunStatus.FAILED) {
+                return false; // 已经是 FAILED，不重复发事件
+            }
+            fresh.setStatus(RunStatus.FAILED);
+            return true;
+        });
+        if (transitioned) {
+            eventBus.publish(Streams.RUN,
+                    codec.toPayload(Events.RunCompleted.of(runId, RunStatus.FAILED.name(), message)));
+        }
     }
 
     /**
      * 到 END：聚合直接前驱成功输出（QA 37）+ 标记运行 SUCCEEDED + 发 RunCompleted。
+     *
+     * <p>终态守卫（Bug 08）：SUCCEEDED 只在当前为 RUNNING 时写，run 已被判 FAILED 就不许翻案。
+     * diamond 的两个分支先后到 END 时，第二个不会再发一条重复的 RunCompleted。
      */
-    private void completeRun(WorkflowState state, WorkflowDefinition wf, String endId) {
+    private void completeRun(String runId, WorkflowDefinition wf, String endId) {
+        boolean transitioned = checkpointStore.update(runId, fresh -> {
+            fresh.getNodeOutputs().put(endId,
+                    new NodeOutput(endId, aggregatePredecessors(wf, endId, fresh), null, NodeStatus.SUCCEEDED));
+            fresh.setUpdatedAt(Instant.now());
+            if (fresh.getStatus() != RunStatus.RUNNING) {
+                return false; // 已 FAILED / 已 SUCCEEDED，不覆盖、不重复发事件
+            }
+            fresh.setStatus(RunStatus.SUCCEEDED);
+            return true;
+        });
+        if (transitioned) {
+            eventBus.publish(Streams.RUN,
+                    codec.toPayload(Events.RunCompleted.of(runId, RunStatus.SUCCEEDED.name(), null)));
+        }
+    }
+
+    /**
+     * END 的最终结果：聚合其直接前驱中执行成功者的输出 {@code {<前驱id>: <输出>}}（QA 37）。
+     */
+    private static Object aggregatePredecessors(WorkflowDefinition wf, String endId, WorkflowState state) {
         Map<String, Object> result = new LinkedHashMap<>();
         for (EdgeDefinition edge : wf.getEdges()) {
             if (endId.equals(edge.getTo())) {
@@ -253,12 +306,7 @@ public class NodeWorker implements ApplicationRunner {
                 }
             }
         }
-        state.getNodeOutputs().put(endId, new NodeOutput(endId, result, null, NodeStatus.SUCCEEDED));
-        state.setStatus(RunStatus.SUCCEEDED);
-        state.setUpdatedAt(Instant.now());
-        checkpointStore.save(state);
-        eventBus.publish(Streams.RUN,
-                codec.toPayload(Events.RunCompleted.of(state.getRunId(), RunStatus.SUCCEEDED.name(), null)));
+        return result;
     }
 
     private static String consumerName() {
