@@ -18,6 +18,9 @@ src/main/java/com/agentflow/test/
 # 本地环境变量
 .env
 
+# 本地覆盖（真实 key，不进仓库）
+application-local.yml
+
 # 操作系统
 .DS_Store
 Thumbs.db
