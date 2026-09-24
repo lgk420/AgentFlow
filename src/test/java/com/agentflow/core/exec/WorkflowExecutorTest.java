@@ -16,7 +16,10 @@ import com.agentflow.core.routing.LlmRouter;
 import com.agentflow.core.state.NodeStatus;
 import com.agentflow.core.state.RunStatus;
 import com.agentflow.core.state.WorkflowState;
+import com.agentflow.rag.RerankProperties;
+import com.agentflow.rag.RetrievalProperties;
 import com.agentflow.rag.RetrievedChunk;
+import com.agentflow.rag.StubReranker;
 import com.agentflow.rag.StubRetriever;
 import com.agentflow.runtime.checkpoint.InMemoryCheckpointStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -99,7 +102,8 @@ class WorkflowExecutorTest {
                 new ParallelDispatcher(4),
                 new ConditionEvaluator(),
                 List.of(new StartNodeExecutor(), new StubToolNodeExecutor(),
-                        new RagNodeExecutor(retriever, new TemplateResolver())), null);
+                        new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
+                                new RetrievalProperties(), new TemplateResolver())), null);
 
         WorkflowState state = ragExecutor.execute("run-rag", parser.parse("""
                 { "id": "rag-wf", "name": "rag",
@@ -125,6 +129,66 @@ class WorkflowExecutorTest {
         assertThat(chunks.get(0).getContent()).isEqualTo("背部渐进超负荷");
         // END 聚合直接前驱 kb 的输出
         assertThat(state.getNodeOutputs().get("end").getOutput()).isEqualTo(Map.of("kb", kbOut));
+    }
+
+    /**
+     * T6.8 拒答闭环：条件边判 {@code {{nodes.kb.output.hit}}}，命中走回答、未命中走兜底。
+     *
+     * <p>这是「阈值」能真正生效的最后一环——没有它，{@code hit} 字段只是躺在输出里没人用。
+     */
+    private WorkflowExecutor refusalExecutor(StubRetriever retriever, double minScore) {
+        RetrievalProperties threshold = new RetrievalProperties();
+        threshold.getMinScore().setVector(minScore);
+        return new WorkflowExecutor(
+                new InMemoryCheckpointStore(),
+                new ParallelDispatcher(4),
+                new ConditionEvaluator(),
+                List.of(new StartNodeExecutor(), new StubLlmNodeExecutor(),
+                        new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
+                                threshold, new TemplateResolver())),
+                null);
+    }
+
+    @Test
+    void refusal_hitTrue_routesToAnswer() throws Exception {
+        StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("背部训练要点", 0.9)));
+        WorkflowExecutor exec = refusalExecutor(retriever, 0.5);
+
+        WorkflowState state = exec.execute("run-refusal-hit",
+                fixture("/testdata/workflows/rag-refusal/refusal.json"), Map.of("userMessage", "怎么练背"));
+
+        assertThat(state.getStatus()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(state.getNodeOutputs()).containsKey("answer").doesNotContainKey("fallback");
+        // END 只聚合实际执行的那条分支——没走的分支连节点输出都没有
+        assertThat(state.getNodeOutputs().get("end").getOutput())
+                .isEqualTo(Map.of("answer", Map.of("branch", "answer")));
+    }
+
+    @Test
+    void refusal_allBelowThreshold_routesToFallback() throws Exception {
+        // 检索召回了内容，但分数低于阈值 → hit=false → 应当拒答，而不是拿着低分资料硬答
+        StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("无关内容", 0.3)));
+        WorkflowExecutor exec = refusalExecutor(retriever, 0.5);
+
+        WorkflowState state = exec.execute("run-refusal-miss",
+                fixture("/testdata/workflows/rag-refusal/refusal.json"), Map.of("userMessage", "增肌期吃多少卡路里"));
+
+        assertThat(state.getStatus()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(state.getNodeOutputs()).containsKey("fallback").doesNotContainKey("answer");
+        assertThat(state.getNodeOutputs().get("end").getOutput())
+                .isEqualTo(Map.of("fallback", Map.of("branch", "fallback")));
+    }
+
+    @Test
+    void refusal_noResultAtAll_routesToFallback() throws Exception {
+        // 检索一条都没召回（知识库确实没有）——同样走兜底
+        WorkflowExecutor exec = refusalExecutor(new StubRetriever(List.of()), 0.5);
+
+        WorkflowState state = exec.execute("run-refusal-empty",
+                fixture("/testdata/workflows/rag-refusal/refusal.json"), Map.of("userMessage", "肌酸有必要吃吗"));
+
+        assertThat(state.getStatus()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(state.getNodeOutputs()).containsKey("fallback").doesNotContainKey("answer");
     }
 
     @Test

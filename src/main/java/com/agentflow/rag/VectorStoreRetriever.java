@@ -35,7 +35,10 @@ public class VectorStoreRetriever implements Retriever {
             builder.filterExpression(collectionFilter(collection));
         }
         return vectorStore.similaritySearch(builder.build()).stream()
-                .map(doc -> new RetrievedChunk(doc.getText(), doc.getScore() == null ? 0.0 : doc.getScore()))
+                .map(doc -> new RetrievedChunk(
+                        doc.getText(),
+                        doc.getScore() == null ? 0.0 : doc.getScore(),
+                        doc.getMetadata()))
                 .toList();
     }
 

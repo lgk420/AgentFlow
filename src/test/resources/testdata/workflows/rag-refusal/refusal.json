@@ -1,0 +1,36 @@
+{
+  "id": "rag-refusal",
+  "name": "RAG 拒答演示",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+    "kb": {
+      "type": "RAG",
+      "query": "{{inputs.userMessage}}",
+      "topK": 3,
+      "collection": "workout_kb_eval"
+    },
+    "answer": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "仅依据下面的资料回答。资料里没有的，不要用你自己的知识补充，也不要编造。\n\n资料：\n{{nodes.kb.output.chunks}}\n\n问题：{{inputs.userMessage}}",
+      "stubOutput": { "branch": "answer" }
+    },
+    "fallback": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "问题：{{inputs.userMessage}}\n\n知识库里没有检索到相关内容。请如实告诉用户你无法回答，并建议他换个问法。绝对不要凭自己的知识编造答案。",
+      "stubOutput": { "branch": "fallback" }
+    },
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "kb", "type": "STATIC" },
+    { "from": "kb", "to": "answer", "type": "CONDITIONAL",
+      "condition": "{{nodes.kb.output.hit}} == true" },
+    { "from": "kb", "to": "fallback", "type": "CONDITIONAL",
+      "condition": "{{nodes.kb.output.hit}} == false" },
+    { "from": "answer", "to": "end", "type": "STATIC" },
+    { "from": "fallback", "to": "end", "type": "STATIC" }
+  ]
+}

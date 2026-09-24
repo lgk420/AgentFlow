@@ -5,12 +5,14 @@
 #       所以请用 `bash scripts/dev.sh ...` 调用，而不是 `./scripts/dev.sh`。
 #
 # 用法：
-#   bash scripts/dev.sh up            # 启动 redis + postgres，等待健康检查通过
-#   bash scripts/dev.sh up --llm      # 额外启动 ollama（本地 LLM）
-#   bash scripts/dev.sh status        # 查看容器状态与健康检查
-#   bash scripts/dev.sh logs [svc]    # 跟踪某个容器日志（默认 redis）
-#   bash scripts/dev.sh down          # 停止环境（保留数据卷）
-#   bash scripts/dev.sh reset         # 停止并清空数据卷（⚠ 数据会丢，相当于恢复出厂）
+#   bash scripts/dev.sh up               # 启动 redis + postgres，等待健康检查通过
+#   bash scripts/dev.sh up --llm         # 额外启动 ollama（本地 LLM）
+#   bash scripts/dev.sh up --rerank      # 额外启动 xinference（RAG 重排）
+#   bash scripts/dev.sh up --llm --rerank    # 两个可选组件都启动
+#   bash scripts/dev.sh status           # 查看容器状态与健康检查
+#   bash scripts/dev.sh logs [svc]       # 跟踪某个容器日志（默认 redis）
+#   bash scripts/dev.sh down             # 停止环境（保留数据卷）
+#   bash scripts/dev.sh reset            # 停止并清空数据卷（⚠ 数据会丢，相当于恢复出厂）
 # ============================================================
 
 set -euo pipefail
@@ -22,10 +24,23 @@ PROFILE_ARGS=()
 case "${1:-help}" in
   up)
     shift
-    if [[ "${1:-}" == "--llm" ]]; then
-      PROFILE_ARGS+=(--profile local-llm)
-      echo ">> 启动本地 LLM 组件（ollama）"
-    fi
+    # 循环而非单次判断：允许 up --llm --rerank 同时启用多个可选组件
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --llm)
+          PROFILE_ARGS+=(--profile local-llm)
+          echo ">> 启动本地 LLM 组件（ollama）"
+          ;;
+        --rerank)
+          PROFILE_ARGS+=(--profile rerank)
+          echo ">> 启动本地重排组件（xinference）"
+          ;;
+        *)
+          echo "未知参数: $1"; echo "用法: $0 up [--llm] [--rerank]"; exit 1
+          ;;
+      esac
+      shift
+    done
     echo ">> docker compose up -d --wait  # --wait 会等健康检查通过"
     docker compose "${PROFILE_ARGS[@]}" up -d --wait
     docker compose ps
@@ -48,7 +63,7 @@ case "${1:-help}" in
     docker compose down -v
     ;;
   *)
-    echo "用法: $0 {up [--llm]|status|logs [svc]|down|reset}"
+    echo "用法: $0 {up [--llm] [--rerank]|status|logs [svc]|down|reset}"
     exit 1
     ;;
 esac

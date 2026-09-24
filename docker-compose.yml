@@ -65,7 +65,41 @@ services:
       - ollama:/root/.ollama
     restart: unless-stopped
 
+  # 可选：本地重排服务（RAG 两阶段检索的重排环节），默认不启动。
+  # 为什么需要独立服务：ollama 只有「生成」「嵌入」两条推理路径，没有 rerank 端点，
+  #   cross-encoder 类模型（如 bge-reranker）无法在其上运行（实测三种社区模型均失败，见 docs/架构设计.md）。
+  # 首次装模型：
+  #   docker compose --profile rerank exec xinference \
+  #     xinference launch --model-name bge-reranker-v2-m3 --model-type rerank
+  xinference:
+    image: xprobe/xinference:v3.4.0-cpu
+    container_name: agentflow-xinference
+    # 选版理由：固定到具体小版本（3.4.0），符合本文件"环境可复现"的原则。
+    # `-cpu` 后缀是硬要求：`xprobe/xinference:latest` 是 GPU 版（要 CUDA），无 GPU 机器起不来。
+    # 体积较大（12.2GB）——它把所有推理后端（vLLM/llama.cpp/GPTQ 等）都打进了同一个镜像，
+    #   以此换取"一个服务支持全部模型类型"，这是选它而非 TEI 的代价。
+    # 镜像源为 Docker Hub，本机直连不通，需经加速站拉取（docker.m.daocloud.io/xprobe/...）。
+    profiles: ["rerank"]      # 显式 --profile rerank 才启动
+    ports:
+      # 只绑本机回环，不绑 0.0.0.0——下面关闭了鉴权，必须同时收窄访问面，二者是一组的。
+      # WSL2 的 localhost 转发仍能让 Windows 上的 Java 应用经 localhost:9997 访问到。
+      - "127.0.0.1:9997:9997"   # API + Web UI
+    environment:
+      # 模型走魔搭（阿里）下载：huggingface.co 在本机不通，而 Xinference 支持切换模型源
+      XINFERENCE_MODEL_SRC: modelscope
+      # 关闭鉴权：Xinference 3.0 起默认开启数据库鉴权，不关的话 CLI 报
+      #   "Cannot find access token, please login first!"，所有 API 返回 401。
+      # 安全前提：端口已限定 127.0.0.1，外部网络不可达——这条与上面的绑定是配套的，
+      #   改任意一条都要同时评估另一条。若将来要放开绑定到 0.0.0.0 或部署到共享环境，
+      #   必须先改回 true，并走 /v1/admin/setup 建管理员 + API Key。
+      XINFERENCE_AUTH_ADVANCED: "false"
+    volumes:
+      - xinference:/root/.xinference   # 模型缓存落卷；不挂的话容器重建要重下 2.3GB
+    command: ["xinference-local", "-H", "0.0.0.0", "--port", "9997"]
+    restart: unless-stopped
+
 volumes:
   redisdata:
   pgdata:
   ollama:
+  xinference:

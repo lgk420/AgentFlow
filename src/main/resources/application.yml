@@ -74,12 +74,53 @@ core:
     # T7.5：进程级处理失败的重投次数上限，超限进死信（agentflow:dlq）
     max-retries: 3
 
+# T6.7：RAG 两阶段检索的重排配置。
+# 为什么必须独立服务：Ollama 只有「生成」「嵌入」两条推理路径，没有 rerank 端点——
+#   cross-encoder 类模型（bge-reranker）在其上跑不了（实测 /api/rerank 返回 404，
+#   社区上传的模型要么加载即崩、要么 /api/embed 返回全零向量）。
+#   服务搭建见 docs/重排服务搭建说明.md（compose 的 rerank profile）。
+agentflow:
+  rag:
+    # T6.8：相似度阈值——低于它的块被丢弃，全被丢弃即判「未命中」，RAG 节点输出 hit=false，
+    # 供 DSL 的 CONDITIONAL 边走拒答兜底分支，而不是让 LLM 拿着空上下文硬编。
+    #
+    # 为什么是两个阈值：两条路径的分数**量纲不同**，同一个数不可能同时适用。
+    #   实测 42 块语料 / 50 条评测集：向量分 正 0.695 / 负 0.555（差 0.14，两团重叠，难设）；
+    #                              重排分 正 0.784 / 负 0.007（差 0.78，中间大片空白，好设）。
+    # 缺省 0.0 = 不启用过滤，行为与加阈值之前完全一致（基线可复现）。
+    #
+    # 该设多少：跑评测看 reports/rag-eval/ 的「阈值扫描」表。实测结论（42 块 / 50 条）：
+    #   重排路径 0.05 → 正样本**零误杀**，负样本**100% 拦截**  ← 推荐
+    #   向量路径 0.60 → 负样本只拦得住 75%，再往上误杀就崩（0.70 误杀 55%）
+    # 即：**拒答这件事，纯向量基本做不到，重排之后才做得干净。**
+    min-score:
+      # 未启用重排（或重排降级回退）时生效；实测最优约 0.60，但只能拦 3/4 的负样本
+      vector: ${RAG_MIN_SCORE_VECTOR:0.0}
+      # 重排实际生效时用；实测 0.05 即可零误杀 + 全拦（负样本分都在 0.007 量级）
+      reranked: ${RAG_MIN_SCORE_RERANKED:0.0}
+    rerank:
+      # 默认关闭：关闭时 RAG 节点不放大召回也不调重排服务，行为与加重排之前完全一致
+      # ——基线可复现，对照实验才有意义。开启前先起服务：bash scripts/dev.sh up --llm --rerank
+      enabled: ${RERANK_ENABLED:false}
+      # Xinference 服务地址（compose 里只绑 127.0.0.1，WSL2 localhost 转发让 Windows 侧可访问）
+      base-url: ${RERANK_BASE_URL:http://localhost:9997}
+      # 对应 `xinference launch` 返回并注册的 model_uid
+      model: ${RERANK_MODEL:bge-reranker-v2-m3}
+      # 召回条数——交给重排的候选池。太小（接近 topK）重排没得挑，正确块若排在池外就够不着；
+      # 太大等于把大半个库递过去、重排挑对的变得过于容易，收益虚高。
+      # 实际生效值 = max(节点 topK, 本值)。
+      recall-k: ${RERANK_RECALL_K:3}
+      # 30s 而非 10s：CPU 下单次重排实测 P99 已达 8.7s，10s 只剩 1 秒余量；
+      # 且模型长期未用会被卸载，冷启动首次调用要加载回内存，10s 会误判成服务不可用（实测踩过）。
+      timeout-seconds: ${RERANK_TIMEOUT_SECONDS:30}
+
 # T5.5：MCP 服务器列表（来源③，McpToolSynchronizer 启动时逐个连接注册工具）。
 # 默认注释掉——保持应用启动轻量（不拉子进程）；需要演示 MCP 工具时解开，改名前缀即可。
 # 字段：name（服务器名）/ command+args（stdio 启动命令，${java.class.path} 由 McpConnector 解析为当前 JVM classpath）
 #       / prefix（工具名前缀，防与内置 @AgentTool 重名）。
 # 连接失败打 warning 跳过，不阻断启动（失败不阻断，T5.5 决策）。
 # 测试不依赖此配置（McpConnectorIntegrationTest 手动构造同样参数）。
+# ⚠️ 解开时要并入上面的 `agentflow:` 块（YAML 不允许同名顶层键出现两次），即与 `rag:` 同级。
 #agentflow:
 #  mcp:
 #    servers:

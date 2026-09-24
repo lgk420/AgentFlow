@@ -1,6 +1,7 @@
 package com.agentflow.api;
 
 import java.util.List;
+import java.util.Map;
 
 import com.agentflow.rag.KeywordEmbeddingModel;
 import com.agentflow.rag.RetrievedChunk;
@@ -111,7 +112,7 @@ class RagApiTest {
         };
         RagApi api = new RagApi(noop);
         IngestRequest req = new IngestRequest();
-        req.setDocuments(List.of("x"));
+        req.setDocuments(List.of(new IngestDocument("x", Map.of())));
 
         assertThatThrownBy(() -> api.ingest(" ", req))
                 .isInstanceOf(IllegalArgumentException.class)
