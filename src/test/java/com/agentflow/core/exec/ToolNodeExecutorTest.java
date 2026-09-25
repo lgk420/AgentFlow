@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.core.dsl.TemplateResolver;
 import com.agentflow.core.model.NodeDefinition;
 import com.agentflow.core.model.NodeType;
@@ -33,7 +34,7 @@ class ToolNodeExecutorTest {
     void setUp() {
         registry = new ToolRegistry(null); // 跳过 schema 校验，聚焦绑定
         registry.register(new ToolDescriptor("echo", "回显参数", null, args -> args));
-        executor = new ToolNodeExecutor(registry, new TemplateResolver());
+        executor = new ToolNodeExecutor(registry, new TemplateResolver(), TestTemplateContext.withoutMemory());
     }
 
     private static NodeDefinition toolNode(String toolName, Map<String, Object> inputs) {

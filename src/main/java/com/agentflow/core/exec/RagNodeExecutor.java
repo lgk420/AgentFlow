@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.core.dsl.TemplateContextFactory;
 import com.agentflow.core.dsl.TemplateResolver;
 import com.agentflow.core.model.NodeDefinition;
 import com.agentflow.core.model.NodeType;
@@ -48,14 +49,17 @@ public class RagNodeExecutor implements NodeExecutor {
     private final RerankProperties rerankProperties;
     private final RetrievalProperties retrievalProperties;
     private final TemplateResolver templateResolver;
+    private final TemplateContextFactory templateContextFactory;
 
     public RagNodeExecutor(Retriever retriever, Reranker reranker, RerankProperties rerankProperties,
-                           RetrievalProperties retrievalProperties, TemplateResolver templateResolver) {
+                           RetrievalProperties retrievalProperties, TemplateResolver templateResolver,
+                           TemplateContextFactory templateContextFactory) {
         this.retriever = retriever;
         this.reranker = reranker;
         this.rerankProperties = rerankProperties;
         this.retrievalProperties = retrievalProperties;
         this.templateResolver = templateResolver;
+        this.templateContextFactory = templateContextFactory;
     }
 
     @Override
@@ -69,7 +73,7 @@ public class RagNodeExecutor implements NodeExecutor {
         if (query == null || query.isBlank()) {
             throw new WorkflowExecutionException("RAG 节点缺少 query 配置：" + node.getId());
         }
-        String resolved = templateResolver.resolve(query, templateContext(state));
+        String resolved = templateResolver.resolve(query, templateContextFactory.contextFor(state));
 
         int topK = node.getTopK();
         boolean rerankEnabled = rerankProperties.isEnabled();
@@ -131,12 +135,5 @@ public class RagNodeExecutor implements NodeExecutor {
             return chunks;
         }
         return chunks.stream().filter(chunk -> chunk.getScore() >= minScore).toList();
-    }
-
-    private static Map<String, Object> templateContext(WorkflowState state) {
-        Map<String, Object> ctx = new LinkedHashMap<>();
-        ctx.put("inputs", state.getInputs());
-        ctx.put("nodes", state.getNodeOutputs());
-        return ctx;
     }
 }

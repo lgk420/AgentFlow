@@ -1,0 +1,120 @@
+{
+  "id": "fitness-coach-chat",
+  "name": "健身教练助手（对话版）",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+
+    "classify": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身教练助手的意图分流员。判断用户这句话是「提交训练日志」（说了某天练了什么，含动作/重量/组次）还是「追问」（就之前聊过的内容提问、要求调整方案）。\n\n用户说：{{inputs.userMessage}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "enum": ["LOG", "FOLLOWUP"],
+            "description": "LOG=提交训练日志，FOLLOWUP=就之前内容追问"
+          }
+        },
+        "required": ["intent"]
+      }
+    },
+
+    "parse": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "把用户的训练日志解析为结构化 JSON，只输出 JSON：识别训练日期、主肌群、每个动作的组数/次数/重量。用户日志：{{inputs.userMessage}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "训练日期 YYYYMMDD" },
+          "muscleGroup": { "type": "string", "enum": ["腿", "胸", "背"] },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "exercise": { "type": "string", "description": "动作名称" },
+                "setsDetail": {
+                  "type": "array",
+                  "description": "每组明细：第一组→最后一组，每组含重量与次数",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "weight": { "type": "number", "description": "该组重量 kg" },
+                      "reps": { "type": "integer", "description": "该组次数" }
+                    },
+                    "required": ["weight", "reps"]
+                  }
+                }
+              },
+              "required": ["exercise", "setsDetail"]
+            }
+          }
+        },
+        "required": ["date", "muscleGroup", "actions"]
+      }
+    },
+
+    "store": {
+      "type": "TOOL",
+      "tool": "training_log_store",
+      "inputs": {
+        "log": "{{nodes.parse.output}}",
+        "userId": "{{inputs.userId | 'default-user'}}"
+      }
+    },
+
+    "kb": {
+      "type": "RAG",
+      "query": "{{nodes.parse.output.muscleGroup}} 训练 渐进超负荷 动作要点",
+      "topK": 3,
+      "collection": "workout_kb"
+    },
+
+    "coach": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身教练。结合下面三样东西，用 3~4 句话点评这次训练并给出下一次的建议。\n\n本次训练：{{nodes.parse.output}}\n知识库要点：{{nodes.kb.output.chunks}}\n之前的对话（空则说明这是第一次）：{{memory.historyText}}"
+    },
+
+    "answer": {
+      "type": "LLM",
+      "model": "qwen-plus",
+      "prompt": "你是健身教练。根据之前的对话回答用户现在的问题。若之前没有对话，就说明你还不了解他的情况、请他先说说练了什么。\n\n之前的对话（空则说明是第一次）：\n{{memory.historyText}}\n\n用户现在说：{{inputs.userMessage}}"
+    },
+
+    "remember_log": {
+      "type": "MEMORY_WRITE",
+      "user": "{{inputs.userMessage}}",
+      "assistant": "{{nodes.coach.output}}"
+    },
+
+    "remember_chat": {
+      "type": "MEMORY_WRITE",
+      "user": "{{inputs.userMessage}}",
+      "assistant": "{{nodes.answer.output}}"
+    },
+
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "classify", "type": "STATIC" },
+
+    { "from": "classify", "to": "parse", "type": "LLM_DYNAMIC",
+      "label": "提交训练日志", "description": "用户说了今天或某天练了什么（动作/重量/组次）" },
+    { "from": "classify", "to": "answer", "type": "LLM_DYNAMIC",
+      "label": "追问", "description": "用户就之前聊过的内容提问，或要求调整方案" },
+
+    { "from": "parse", "to": "store", "type": "STATIC" },
+    { "from": "store", "to": "kb", "type": "STATIC" },
+    { "from": "kb", "to": "coach", "type": "STATIC" },
+    { "from": "coach", "to": "remember_log", "type": "STATIC" },
+    { "from": "remember_log", "to": "end", "type": "STATIC" },
+
+    { "from": "answer", "to": "remember_chat", "type": "STATIC" },
+    { "from": "remember_chat", "to": "end", "type": "STATIC" }
+  ]
+}

@@ -6,6 +6,7 @@ import java.util.Map;
 import com.agentflow.core.exec.GraphRuntime;
 import com.agentflow.core.routing.ConditionEvaluator;
 import com.agentflow.core.store.WorkflowStore;
+import com.agentflow.runtime.stream.RunProgressBus;
 import com.agentflow.runtime.checkpoint.RedisCheckpointStore;
 import com.agentflow.runtime.queue.EventBus;
 import com.agentflow.runtime.queue.EventCodec;
@@ -60,7 +61,7 @@ class NodeWorkerDlqTest {
         WorkflowStore workflowStore = new WorkflowStore(template, new com.agentflow.core.dsl.GraphParser(mapper), mapper);
         GraphRuntime graphRuntime = new GraphRuntime(new ConditionEvaluator(), null);
         worker = new NodeWorker(eventBus, new EventCodec(mapper), checkpointStore, workflowStore, graphRuntime,
-                template, List.of(), MAX_RETRIES);
+                template, new RunProgressBus(), List.of(), MAX_RETRIES);
     }
 
     @AfterEach

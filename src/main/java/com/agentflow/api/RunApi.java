@@ -61,11 +61,16 @@ public class RunApi {
         if (wf == null) {
             return ResponseEntity.notFound().build();
         }
+        if (!isValidSessionId(request.getSessionId())) {
+            return ResponseEntity.badRequest().build();
+        }
         String runId = UUID.randomUUID().toString();
 
         WorkflowState state = new WorkflowState();
         state.setRunId(runId);
         state.setWorkflowId(wf.getId());
+        // 会话标识由调用方给（服务端不生成）；为空即无记忆的单次运行
+        state.setSessionId(request.getSessionId());
         state.setInputs(request.getInputs() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(request.getInputs()));
         state.setStatus(RunStatus.RUNNING);
         state.setCreatedAt(Instant.now());
@@ -74,7 +79,21 @@ public class RunApi {
 
         eventBus.publish(Streams.RUN, codec.toPayload(Events.RunStarted.of(runId, wf.getId(), state.getInputs())));
 
+        // T10.4：wait=false 时立刻返回（RUNNING 状态里带着 runId），客户端据此订阅
+        // GET /runs/{runId}/stream 看进度。默认 true，保持既有「阻塞到终态」语义。
+        if (!request.isWait()) {
+            return ResponseEntity.ok(checkpointStore.load(runId));
+        }
         return pollUntilTerminal(runId);
+    }
+
+    /**
+     * 会话标识校验（T10.2）：可空（无记忆的单次运行）；非空时限制长度——它直接落进
+     * {@code conversation_memory.session_id VARCHAR(64)}，超长会在写库时炸，
+     * 不如在入口就挡掉并给 400。
+     */
+    private static boolean isValidSessionId(String sessionId) {
+        return sessionId == null || (!sessionId.isBlank() && sessionId.length() <= 64);
     }
 
     /**

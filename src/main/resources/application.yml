@@ -39,6 +39,12 @@ spring:
         dimensions: 1024
         index-type: HNSW
         initialize-schema: true
+  sql:
+    init:
+      # T10.1：执行 resources/schema.sql 建业务表（conversation_memory）。
+      # 默认只对嵌入式数据库执行，这里显式设为 always 才管 Postgres；
+      # SQL 全用 IF NOT EXISTS，每次启动重复执行无副作用。
+      mode: always
   datasource:
     # T6.2：pgvector 数据源（compose postgres，env 可覆盖）
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/agentflow}
@@ -113,6 +119,14 @@ agentflow:
       # 30s 而非 10s：CPU 下单次重排实测 P99 已达 8.7s，10s 只剩 1 秒余量；
       # 且模型长期未用会被卸载，冷启动首次调用要加载回内存，10s 会误判成服务不可用（实测踩过）。
       timeout-seconds: ${RERANK_TIMEOUT_SECONDS:30}
+
+  # T10.1：对话记忆——跨会话存活的对话历史（Postgres 的 conversation_memory 表）。
+  # 存储分层约定：运行态（checkpoint/事件流）→ Redis；业务数据（记忆/向量）→ Postgres。
+  # 默认开启，但**只有传了 sessionId 的运行才会碰它**；不传就是无记忆的单次运行，现有调用方不受影响。
+  memory:
+    enabled: ${MEMORY_ENABLED:true}
+    # 每次取多少条历史喂 prompt（读时截断，不删数据）。太小上下文断裂，太大 prompt 膨胀。
+    history-limit: ${MEMORY_HISTORY_LIMIT:20}
 
 # T5.5：MCP 服务器列表（来源③，McpToolSynchronizer 启动时逐个连接注册工具）。
 # 默认注释掉——保持应用启动轻量（不拉子进程）；需要演示 MCP 工具时解开，改名前缀即可。

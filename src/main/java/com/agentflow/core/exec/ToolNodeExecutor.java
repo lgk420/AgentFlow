@@ -3,6 +3,7 @@ package com.agentflow.core.exec;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.agentflow.core.dsl.TemplateContextFactory;
 import com.agentflow.core.dsl.TemplateResolver;
 import com.agentflow.core.model.NodeDefinition;
 import com.agentflow.core.model.NodeType;
@@ -25,10 +26,13 @@ public class ToolNodeExecutor implements NodeExecutor {
 
     private final ToolRegistry toolRegistry;
     private final TemplateResolver templateResolver;
+    private final TemplateContextFactory templateContextFactory;
 
-    public ToolNodeExecutor(ToolRegistry toolRegistry, TemplateResolver templateResolver) {
+    public ToolNodeExecutor(ToolRegistry toolRegistry, TemplateResolver templateResolver,
+                            TemplateContextFactory templateContextFactory) {
         this.toolRegistry = toolRegistry;
         this.templateResolver = templateResolver;
+        this.templateContextFactory = templateContextFactory;
     }
 
     @Override
@@ -44,15 +48,8 @@ public class ToolNodeExecutor implements NodeExecutor {
         }
         Map<String, Object> bound = new LinkedHashMap<>();
         for (Map.Entry<String, Object> e : node.getInputs().entrySet()) {
-            bound.put(e.getKey(), templateResolver.resolveObject(e.getValue(), templateContext(state)));
+            bound.put(e.getKey(), templateResolver.resolveObject(e.getValue(), templateContextFactory.contextFor(state)));
         }
         return toolRegistry.invoke(toolName, bound);
-    }
-
-    private static Map<String, Object> templateContext(WorkflowState state) {
-        Map<String, Object> ctx = new LinkedHashMap<>();
-        ctx.put("inputs", state.getInputs());
-        ctx.put("nodes", state.getNodeOutputs());
-        return ctx;
     }
 }

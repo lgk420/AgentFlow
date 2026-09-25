@@ -2,6 +2,7 @@ package com.agentflow.tool.mcp;
 
 import java.util.List;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.agent.ChatResult;
 import com.agentflow.agent.StubLlmGateway;
 import com.agentflow.agent.ToolCall;
@@ -41,7 +42,7 @@ class McpAgenticLoopTest {
                     new ChatResult("6×7=42", List.of()));
 
             AgenticLoopExecutor loop = new AgenticLoopExecutor(gateway, registry,
-                    new TemplateResolver(), new ObjectMapper());
+                    new TemplateResolver(), TestTemplateContext.withoutMemory(), new ObjectMapper());
 
             Object output = loop.execute(loopNode("计算 6×7，用 demo_calc", 5, "demo_calc"),
                     state("goal", "算一下"));

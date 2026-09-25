@@ -22,6 +22,8 @@ import com.agentflow.core.state.RunStatus;
 import com.agentflow.core.state.WorkflowState;
 import com.agentflow.core.store.WorkflowStore;
 import com.agentflow.runtime.checkpoint.CheckpointStore;
+import com.agentflow.runtime.stream.RunProgress;
+import com.agentflow.runtime.stream.RunProgressBus;
 import com.agentflow.runtime.queue.EventBus;
 import com.agentflow.runtime.queue.EventCodec;
 import com.agentflow.runtime.queue.EventMessage;
@@ -64,12 +66,13 @@ public class NodeWorker implements ApplicationRunner {
     private final WorkflowStore workflowStore;
     private final GraphRuntime graphRuntime;
     private final StringRedisTemplate redis;
+    private final RunProgressBus progressBus;
     private final int maxRetries;
     private final Map<NodeType, NodeExecutor> executors;
 
     public NodeWorker(EventBus eventBus, EventCodec codec, CheckpointStore checkpointStore,
                       WorkflowStore workflowStore, GraphRuntime graphRuntime, StringRedisTemplate redis,
-                      List<NodeExecutor> executors,
+                      RunProgressBus progressBus, List<NodeExecutor> executors,
                       @Value("${core.event-driven.max-retries:3}") int maxRetries) {
         this.eventBus = eventBus;
         this.codec = codec;
@@ -77,6 +80,7 @@ public class NodeWorker implements ApplicationRunner {
         this.workflowStore = workflowStore;
         this.graphRuntime = graphRuntime;
         this.redis = redis;
+        this.progressBus = progressBus;
         this.maxRetries = maxRetries;
         this.executors = new EnumMap<>(NodeType.class);
         executors.forEach(ex -> this.executors.put(ex.type(), ex));
@@ -160,6 +164,10 @@ public class NodeWorker implements ApplicationRunner {
             fresh.getNodeOutputs().put(nodeId, new NodeOutput(nodeId, output, null, NodeStatus.SUCCEEDED));
             return graphRuntime.resolveOutEdges(nodeId, wf, fresh, false, dynamicTarget);
         });
+
+        // T10.4：节点已原子提交，推一条进度给 SSE 订阅者。放在提交之后——推的是既有事实，
+        // 不是「即将执行」；推失败也不影响执行（RunProgressBus 内部吞掉订阅者异常）。
+        progressBus.publish(RunProgress.nodeCompleted(runId, nodeId, output));
 
         for (String next : ready) {
             if (wf.getNodes().get(next).getType() == NodeType.END) {
@@ -267,6 +275,7 @@ public class NodeWorker implements ApplicationRunner {
         if (transitioned) {
             eventBus.publish(Streams.RUN,
                     codec.toPayload(Events.RunCompleted.of(runId, RunStatus.FAILED.name(), message)));
+            progressBus.publish(RunProgress.runCompleted(runId, RunStatus.FAILED.name(), message));
         }
     }
 
@@ -290,6 +299,7 @@ public class NodeWorker implements ApplicationRunner {
         if (transitioned) {
             eventBus.publish(Streams.RUN,
                     codec.toPayload(Events.RunCompleted.of(runId, RunStatus.SUCCEEDED.name(), null)));
+            progressBus.publish(RunProgress.runCompleted(runId, RunStatus.SUCCEEDED.name(), null));
         }
     }
 

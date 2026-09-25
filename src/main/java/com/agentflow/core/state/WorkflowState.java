@@ -31,6 +31,14 @@ public class WorkflowState {
     private String workflowId;
 
     /**
+     * 会话标识（T10.2）——由调用方传入，服务端只校验不生成；<b>可空</b>。
+     *
+     * <p>一次会话包含多次运行（sessionId 1:N runId）。为空表示无记忆的单次运行，
+     * 模板里的 {@code {{memory.*}}} 取不到值，行为与加记忆之前一致。
+     */
+    private String sessionId;
+
+    /**
      * 运行总体状态，初始 RUNNING。
      */
     private RunStatus status = RunStatus.RUNNING;
@@ -111,6 +119,14 @@ public class WorkflowState {
 
     public String getWorkflowId() {
         return workflowId;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
     }
 
     public void setWorkflowId(String workflowId) {

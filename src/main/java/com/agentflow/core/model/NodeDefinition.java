@@ -166,6 +166,22 @@ public class NodeDefinition {
         return str("collection");
     }
 
+    /**
+     * MEMORY_WRITE（T10.3）：用户消息模板，缺省 null（不写这条）。
+     */
+    @JsonIgnore
+    public String getUserMessage() {
+        return str("user");
+    }
+
+    /**
+     * MEMORY_WRITE（T10.3）：助手回复模板，缺省 null（不写这条）。
+     */
+    @JsonIgnore
+    public String getAssistantReply() {
+        return str("assistant");
+    }
+
     private String str(String key) {
         Object v = config.get(key);
         return v == null ? null : v.toString();

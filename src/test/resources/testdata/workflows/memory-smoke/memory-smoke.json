@@ -1,0 +1,20 @@
+{
+  "id": "memory-smoke",
+  "name": "记忆管道冒烟（不依赖 LLM）",
+  "version": 1,
+  "nodes": {
+    "start": { "type": "START" },
+
+    "remember": {
+      "type": "MEMORY_WRITE",
+      "user": "{{inputs.userMessage}}",
+      "assistant": "{{memory.historyText}}"
+    },
+
+    "end": { "type": "END" }
+  },
+  "edges": [
+    { "from": "start", "to": "remember", "type": "STATIC" },
+    { "from": "remember", "to": "end", "type": "STATIC" }
+  ]
+}

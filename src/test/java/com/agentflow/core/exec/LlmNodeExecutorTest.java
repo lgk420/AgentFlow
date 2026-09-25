@@ -3,6 +3,7 @@ package com.agentflow.core.exec;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.agent.StubLlmGateway;
 import com.agentflow.core.dsl.GraphParser;
 import com.agentflow.core.dsl.TemplateResolver;
@@ -31,7 +32,7 @@ class LlmNodeExecutorTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final StubLlmGateway gateway = new StubLlmGateway();
-    private final LlmNodeExecutor executor = new LlmNodeExecutor(gateway, new TemplateResolver(), mapper);
+    private final LlmNodeExecutor executor = new LlmNodeExecutor(gateway, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
 
     private NodeDefinition llmNode(String prompt, String schemaJson) throws Exception {
         NodeDefinition node = new NodeDefinition();

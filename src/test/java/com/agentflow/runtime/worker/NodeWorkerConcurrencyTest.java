@@ -19,6 +19,7 @@ import com.agentflow.core.routing.ConditionEvaluator;
 import com.agentflow.core.state.RunStatus;
 import com.agentflow.core.state.WorkflowState;
 import com.agentflow.core.store.WorkflowStore;
+import com.agentflow.runtime.stream.RunProgressBus;
 import com.agentflow.runtime.checkpoint.RedisCheckpointStore;
 import com.agentflow.runtime.queue.EventBus;
 import com.agentflow.runtime.queue.EventCodec;
@@ -123,7 +124,7 @@ class NodeWorkerConcurrencyTest {
 
     private NodeWorker newWorker(NodeExecutor executor) {
         return new NodeWorker(eventBus, codec, checkpointStore, workflowStore, graphRuntime, template,
-                List.of(executor), 3);
+                new RunProgressBus(), List.of(executor), 3);
     }
 
     /** start → {a, b} → end 的 diamond：a、b 同时就绪，由两个 worker 分别处理。 */

@@ -9,6 +9,8 @@ import com.agentflow.core.model.WorkflowDefinition;
 import com.agentflow.core.state.RunStatus;
 import com.agentflow.core.store.WorkflowStore;
 import com.agentflow.runtime.checkpoint.CheckpointStore;
+import com.agentflow.runtime.stream.RunProgress;
+import com.agentflow.runtime.stream.RunProgressBus;
 import com.agentflow.runtime.queue.EventBus;
 import com.agentflow.runtime.queue.EventCodec;
 import com.agentflow.runtime.queue.EventMessage;
@@ -37,13 +39,15 @@ public class RunWorker implements ApplicationRunner {
     private final EventCodec codec;
     private final CheckpointStore checkpointStore;
     private final WorkflowStore workflowStore;
+    private final RunProgressBus progressBus;
 
     public RunWorker(EventBus eventBus, EventCodec codec, CheckpointStore checkpointStore,
-                     WorkflowStore workflowStore) {
+                     WorkflowStore workflowStore, RunProgressBus progressBus) {
         this.eventBus = eventBus;
         this.codec = codec;
         this.checkpointStore = checkpointStore;
         this.workflowStore = workflowStore;
+        this.progressBus = progressBus;
     }
 
     @Override
@@ -119,6 +123,7 @@ public class RunWorker implements ApplicationRunner {
         });
         if (transitioned) {
             eventBus.publish(Streams.RUN, codec.toPayload(Events.RunCompleted.of(runId, RunStatus.FAILED.name(), error)));
+            progressBus.publish(RunProgress.runCompleted(runId, RunStatus.FAILED.name(), error));
         }
     }
 

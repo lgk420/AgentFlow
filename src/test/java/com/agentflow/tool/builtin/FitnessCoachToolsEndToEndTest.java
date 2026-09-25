@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.agent.ChatMessage;
 import com.agentflow.agent.ChatResult;
 import com.agentflow.agent.LlmGateway;
@@ -86,9 +87,9 @@ class FitnessCoachToolsEndToEndTest {
                 new ConditionEvaluator(),
                 List.of(
                         new StartNodeExecutor(),
-                        new LlmNodeExecutor(gateway, resolver, mapper),
-                        new ToolNodeExecutor(registry, resolver),
-                        new AgenticLoopExecutor(gateway, registry, resolver, mapper)), null);
+                        new LlmNodeExecutor(gateway, resolver, TestTemplateContext.withoutMemory(), mapper),
+                        new ToolNodeExecutor(registry, resolver, TestTemplateContext.withoutMemory()),
+                        new AgenticLoopExecutor(gateway, registry, resolver, TestTemplateContext.withoutMemory(), mapper)), null);
 
         wf = loadFitnessCoachWithoutRag();
     }

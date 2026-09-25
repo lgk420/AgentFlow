@@ -3,6 +3,7 @@ package com.agentflow.core.exec;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.agent.ChatMessage;
 import com.agentflow.agent.ChatResult;
 import com.agentflow.agent.StubLlmGateway;
@@ -41,7 +42,7 @@ class AgenticLoopExecutorTest {
     private final StubLlmGateway gateway = new StubLlmGateway();
     private final ToolRegistry registry = new ToolRegistry(null); // 本测试不涉及入参校验（T5.3 另有测试）
     private final AgenticLoopExecutor executor =
-            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), mapper);
+            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
 
     private static NodeDefinition loopNode(String systemPrompt, int maxIterations, String... tools) {
         NodeDefinition node = new NodeDefinition();

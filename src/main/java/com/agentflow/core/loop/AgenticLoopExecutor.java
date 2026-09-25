@@ -10,6 +10,7 @@ import com.agentflow.agent.ChatResult;
 import com.agentflow.agent.LlmGateway;
 import com.agentflow.agent.ToolCall;
 import com.agentflow.agent.ToolSpec;
+import com.agentflow.core.dsl.TemplateContextFactory;
 import com.agentflow.core.dsl.TemplateResolver;
 import com.agentflow.core.exec.NodeExecutor;
 import com.agentflow.core.model.NodeDefinition;
@@ -42,13 +43,16 @@ public class AgenticLoopExecutor implements NodeExecutor {
     private final LlmGateway llmGateway;
     private final ToolRegistry toolRegistry;
     private final TemplateResolver templateResolver;
+    private final TemplateContextFactory templateContextFactory;
     private final ObjectMapper mapper;
 
     public AgenticLoopExecutor(LlmGateway llmGateway, ToolRegistry toolRegistry,
-                               TemplateResolver templateResolver, ObjectMapper mapper) {
+                               TemplateResolver templateResolver, TemplateContextFactory templateContextFactory,
+                               ObjectMapper mapper) {
         this.llmGateway = llmGateway;
         this.toolRegistry = toolRegistry;
         this.templateResolver = templateResolver;
+        this.templateContextFactory = templateContextFactory;
         this.mapper = mapper;
     }
 
@@ -60,7 +64,7 @@ public class AgenticLoopExecutor implements NodeExecutor {
     @Override
     public Object execute(NodeDefinition node, WorkflowState state) {
         String systemPrompt = node.getSystemPrompt() == null ? null
-                : templateResolver.resolve(node.getSystemPrompt(), templateContext(state));
+                : templateResolver.resolve(node.getSystemPrompt(), templateContextFactory.contextFor(state));
         List<ToolSpec> tools = resolveTools(node);
         List<ChatMessage> history = new ArrayList<>();
         int maxIterations = node.getMaxIterations();
@@ -111,12 +115,5 @@ public class AgenticLoopExecutor implements NodeExecutor {
             String schema = d.getParameters() == null ? null : d.getParameters().toString();
             return new ToolSpec(name, d.getDescription(), schema);
         }).toList();
-    }
-
-    private static Map<String, Object> templateContext(WorkflowState state) {
-        Map<String, Object> ctx = new LinkedHashMap<>();
-        ctx.put("inputs", state.getInputs());
-        ctx.put("nodes", state.getNodeOutputs());
-        return ctx;
     }
 }

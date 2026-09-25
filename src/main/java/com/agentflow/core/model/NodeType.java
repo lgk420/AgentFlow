@@ -35,5 +35,17 @@ public enum NodeType {
     /**
      * 检索向量库，产出上下文 chunks。config：query / topK / collection。
      */
-    RAG
+    RAG,
+
+    /**
+     * 把一轮对话写进会话记忆（T10.3）。config：user / assistant（均为模板，可只给一个）。
+     *
+     * <p><b>为什么是显式节点而不是引擎自动写</b>：引擎是通用层，不该知道某个工作流的内部结构
+     * （「回复存在哪个节点里」这种知识属于流程作者）。让工作流自己声明「把什么写进记忆」，
+     * 与它声明「用什么工具、走哪条边」是同一套哲学。
+     *
+     * <p>sessionId 不在此配置——它是运行级概念，从 {@link com.agentflow.core.state.WorkflowState} 取；
+     * 为空（调用方没传）时本节点是 no-op。
+     */
+    MEMORY_WRITE
 }

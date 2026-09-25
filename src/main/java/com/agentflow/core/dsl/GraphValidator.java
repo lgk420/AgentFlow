@@ -47,7 +47,8 @@ public class GraphValidator {
             NodeType.LLM, Set.of("model", "prompt", "retryPolicy"),
             NodeType.AGENTIC_LOOP, Set.of("model", "systemPrompt", "tools", "maxIterations"),
             NodeType.TOOL, Set.of("tool", "inputs", "retryPolicy"),
-            NodeType.RAG, Set.of("query", "topK", "collection"));
+            NodeType.RAG, Set.of("query", "topK", "collection"),
+            NodeType.MEMORY_WRITE, Set.of("user", "assistant"));
 
     /**
      * 允许带 outputSchema 的节点类型（DSL使用说明 3.1）。

@@ -16,7 +16,8 @@ import org.springframework.stereotype.Component;
  * 占位符模板解析器：把含 {@code {{...}}} 的模板字符串填成运行时数据。
  *
  * <p>占位符三来源（DSL使用说明 5）：{@code {{inputs.x}}}（运行输入）、{@code {{nodes.n.output.f}}}（上游节点输出，
- * 字段链式取值）、{@code {{memory...}}}（跨 run 记忆，P1 只识别、求值抛"未实现"）。
+ * 字段链式取值）、{@code {{memory.*}}}（会话记忆，T10.2 起真正可用——由调用方在拼 context 时注入，
+ * 本类不关心它从哪来）。
  *
  * <p>规则：
  * ① 宽松空格：{@code {{ x }}} ≡ {@code {{x}}}（占位符前后空格 trim，段名不 trim）；
@@ -143,9 +144,8 @@ public class TemplateResolver {
      * 中间层取不到（缺 key / 无 getter / 非对象）视为缺值，返回 null。
      */
     private Object lookup(Map<String, Object> context, String path) {
-        if (path.equals("memory") || path.startsWith("memory.")) {
-            throw new TemplateResolutionException("{{memory...}} 未实现（P1 只识别不解析）");
-        }
+        // memory 命名空间由调用方（TemplateContextFactory）在拼 context 时注入，
+        // 这里不再特殊处理——T10.2 之前它对 memory 直接抛「未实现」，现在与 inputs/nodes 同等对待。
         Object cur = context;
         for (String seg : path.split("\\.")) {
             if (cur instanceof Map<?, ?> m) {

@@ -13,6 +13,7 @@ import com.agentflow.core.routing.ConditionEvaluator;
 import com.agentflow.core.state.RunStatus;
 import com.agentflow.core.state.WorkflowState;
 import com.agentflow.core.store.WorkflowStore;
+import com.agentflow.runtime.stream.RunProgressBus;
 import com.agentflow.runtime.checkpoint.RedisCheckpointStore;
 import com.agentflow.runtime.queue.EventBus;
 import com.agentflow.runtime.queue.EventCodec;
@@ -92,7 +93,7 @@ class NodeWorkerIdempotencyTest {
 
     private NodeWorker newWorker(CountingToolExecutor counting) {
         return new NodeWorker(eventBus, codec, checkpointStore, workflowStore, graphRuntime, template,
-                List.of(counting), 3);
+                new RunProgressBus(), List.of(counting), 3);
     }
 
     private void saveWorkflow() {

@@ -3,6 +3,7 @@ package com.agentflow.core.exec;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.core.dsl.TemplateResolver;
 import com.agentflow.core.model.NodeDefinition;
 import com.agentflow.core.model.NodeType;
@@ -43,7 +44,7 @@ class RagNodeExecutorTest {
     private static RagNodeExecutor newExecutor(StubRetriever retriever, StubReranker reranker,
                                                RerankProperties rerankProperties,
                                                RetrievalProperties retrievalProperties) {
-        return new RagNodeExecutor(retriever, reranker, rerankProperties, retrievalProperties, new TemplateResolver());
+        return new RagNodeExecutor(retriever, reranker, rerankProperties, retrievalProperties, new TemplateResolver(), TestTemplateContext.withoutMemory());
     }
 
     private static NodeDefinition ragNode(Map<String, Object> config) {

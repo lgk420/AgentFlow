@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.agentflow.memory.TestTemplateContext;
 import com.agentflow.agent.StubLlmGateway;
 import com.agentflow.core.dsl.GraphParser;
 import com.agentflow.core.dsl.TemplateResolver;
@@ -103,7 +104,7 @@ class WorkflowExecutorTest {
                 new ConditionEvaluator(),
                 List.of(new StartNodeExecutor(), new StubToolNodeExecutor(),
                         new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
-                                new RetrievalProperties(), new TemplateResolver())), null);
+                                new RetrievalProperties(), new TemplateResolver(), TestTemplateContext.withoutMemory())), null);
 
         WorkflowState state = ragExecutor.execute("run-rag", parser.parse("""
                 { "id": "rag-wf", "name": "rag",
@@ -145,7 +146,7 @@ class WorkflowExecutorTest {
                 new ConditionEvaluator(),
                 List.of(new StartNodeExecutor(), new StubLlmNodeExecutor(),
                         new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
-                                threshold, new TemplateResolver())),
+                                threshold, new TemplateResolver(), TestTemplateContext.withoutMemory())),
                 null);
     }
 
