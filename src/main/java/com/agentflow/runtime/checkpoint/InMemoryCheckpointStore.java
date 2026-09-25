@@ -4,7 +4,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
 
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.WorkflowState;
 
 /**
  * 内存版 checkpoint 存储：ConcurrentHashMap，create/load/update 都走 {@link WorkflowState#snapshot()}。

@@ -2,7 +2,7 @@ package com.agentflow.runtime.checkpoint;
 
 import java.util.function.Function;
 
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.WorkflowState;
 
 /**
  * Checkpoint 存储：一次运行的快照的存取。

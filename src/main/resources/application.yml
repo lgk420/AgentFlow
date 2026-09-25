@@ -140,5 +140,5 @@ agentflow:
 #    servers:
 #      - name: demo-calc
 #        command: java
-#        args: ["-cp", "${java.class.path}", "com.agentflow.tool.mcp.demo.McpDemoServerMain"]
+#        args: ["-cp", "${java.class.path}", "com.agentflow.demo.McpDemoServerMain"]
 #        prefix: "demo_"

@@ -10,8 +10,8 @@ import java.util.Map;
 import com.agentflow.api.RegisterToolRequest;
 import com.agentflow.api.ToolApi;
 import com.agentflow.api.ToolApi.ToolSummary;
-import com.agentflow.tool.ToolRegistry;
-import com.agentflow.tool.ToolSchemaValidator;
+import com.agentflow.ability.tool.ToolRegistry;
+import com.agentflow.ability.tool.ToolSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 

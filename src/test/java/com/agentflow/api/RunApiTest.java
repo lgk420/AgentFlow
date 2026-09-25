@@ -4,11 +4,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.runtime.queue.EventBus;
-import com.agentflow.runtime.queue.EventMessage;
-import com.agentflow.runtime.queue.Events;
-import com.agentflow.runtime.queue.Streams;
-import com.agentflow.tool.annotation.AgentTool;
+import com.agentflow.runtime.event.EventBus;
+import com.agentflow.runtime.event.EventMessage;
+import com.agentflow.runtime.event.Events;
+import com.agentflow.runtime.event.Streams;
+import com.agentflow.ability.tool.annotation.AgentTool;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>覆盖：存图 → 提交运行（同步，返回 SUCCEEDED）→ 查询状态；未知工作流 404；未知 run 404。
  * 用 t2/parallel（TOOL + STATIC，过校验且 P2 可跑）。
  *
- * <p>T5.4 起 TOOL 节点走真 {@link com.agentflow.core.exec.ToolNodeExecutor}，需在注册中心里
+ * <p>T5.4 起 TOOL 节点走真 {@link com.agentflow.engine.node.ToolNodeExecutor}，需在注册中心里
  * 有 query_a / query_b 两个工具（嵌套 {@link TestConfiguration} 提供 {@code @AgentTool} bean，
  * 启动时由 {@code AgentToolRegistrar} 扫描注册），否则 t2/parallel 的 TOOL 节点会因"工具不存在"FAILED。
  */

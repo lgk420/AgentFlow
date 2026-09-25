@@ -1,6 +1,6 @@
 package com.agentflow.runtime.worker;
 
-import com.agentflow.tool.annotation.AgentTool;
+import com.agentflow.ability.tool.annotation.AgentTool;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

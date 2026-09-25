@@ -3,17 +3,17 @@ package com.agentflow.runtime.worker;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.core.exec.GraphRuntime;
-import com.agentflow.core.routing.ConditionEvaluator;
-import com.agentflow.core.store.WorkflowStore;
-import com.agentflow.runtime.stream.RunProgressBus;
+import com.agentflow.engine.scheduler.GraphRuntime;
+import com.agentflow.engine.scheduler.ConditionEvaluator;
+import com.agentflow.engine.parse.WorkflowStore;
+import com.agentflow.runtime.progress.RunProgressBus;
 import com.agentflow.runtime.checkpoint.RedisCheckpointStore;
-import com.agentflow.runtime.queue.EventBus;
-import com.agentflow.runtime.queue.EventCodec;
-import com.agentflow.runtime.queue.EventMessage;
-import com.agentflow.runtime.queue.Events;
-import com.agentflow.runtime.queue.RedisStreamEventBus;
-import com.agentflow.runtime.queue.Streams;
+import com.agentflow.runtime.event.EventBus;
+import com.agentflow.runtime.event.EventCodec;
+import com.agentflow.runtime.event.EventMessage;
+import com.agentflow.runtime.event.Events;
+import com.agentflow.runtime.event.RedisStreamEventBus;
+import com.agentflow.runtime.event.Streams;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +58,7 @@ class NodeWorkerDlqTest {
         template.afterPropertiesSet();
         eventBus = new RedisStreamEventBus(template, mapper);
         RedisCheckpointStore checkpointStore = new RedisCheckpointStore(template, mapper);
-        WorkflowStore workflowStore = new WorkflowStore(template, new com.agentflow.core.dsl.GraphParser(mapper), mapper);
+        WorkflowStore workflowStore = new WorkflowStore(template, new com.agentflow.engine.parse.GraphParser(mapper), mapper);
         GraphRuntime graphRuntime = new GraphRuntime(new ConditionEvaluator(), null);
         worker = new NodeWorker(eventBus, new EventCodec(mapper), checkpointStore, workflowStore, graphRuntime,
                 template, new RunProgressBus(), List.of(), MAX_RETRIES);

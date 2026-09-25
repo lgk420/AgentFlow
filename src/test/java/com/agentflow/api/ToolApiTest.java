@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.agentflow.api.ToolApi.ToolSummary;
-import com.agentflow.tool.ToolConflictException;
-import com.agentflow.tool.ToolDescriptor;
-import com.agentflow.tool.ToolRegistry;
+import com.agentflow.ability.tool.ToolConflictException;
+import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.ToolRegistry;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

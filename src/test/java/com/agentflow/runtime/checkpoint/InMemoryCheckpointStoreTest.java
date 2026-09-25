@@ -7,10 +7,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import com.agentflow.core.state.NodeOutput;
-import com.agentflow.core.state.NodeStatus;
-import com.agentflow.core.state.RunStatus;
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.NodeOutput;
+import com.agentflow.engine.model.state.NodeStatus;
+import com.agentflow.engine.model.state.RunStatus;
+import com.agentflow.engine.model.state.WorkflowState;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

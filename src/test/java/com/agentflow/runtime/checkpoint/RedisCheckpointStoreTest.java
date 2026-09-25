@@ -6,10 +6,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.agentflow.core.state.NodeOutput;
-import com.agentflow.core.state.NodeStatus;
-import com.agentflow.core.state.RunStatus;
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.NodeOutput;
+import com.agentflow.engine.model.state.NodeStatus;
+import com.agentflow.engine.model.state.RunStatus;
+import com.agentflow.engine.model.state.WorkflowState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

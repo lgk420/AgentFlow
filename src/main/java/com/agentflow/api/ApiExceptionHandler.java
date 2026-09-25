@@ -2,8 +2,8 @@ package com.agentflow.api;
 
 import java.util.Map;
 
-import com.agentflow.core.dsl.WorkflowParseException;
-import com.agentflow.tool.ToolConflictException;
+import com.agentflow.engine.parse.WorkflowParseException;
+import com.agentflow.ability.tool.ToolConflictException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;

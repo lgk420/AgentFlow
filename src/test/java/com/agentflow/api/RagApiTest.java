@@ -3,9 +3,9 @@ package com.agentflow.api;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.rag.KeywordEmbeddingModel;
-import com.agentflow.rag.RetrievedChunk;
-import com.agentflow.rag.VectorStoreRetriever;
+import com.agentflow.ability.rag.KeywordEmbeddingModel;
+import com.agentflow.ability.rag.RetrievedChunk;
+import com.agentflow.ability.rag.VectorStoreRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;

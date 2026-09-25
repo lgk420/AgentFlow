@@ -2,10 +2,10 @@ package com.agentflow.api;
 
 import java.util.List;
 
-import com.agentflow.tool.RemoteToolInvoker;
-import com.agentflow.tool.ToolConflictException;
-import com.agentflow.tool.ToolDescriptor;
-import com.agentflow.tool.ToolRegistry;
+import com.agentflow.ability.tool.RemoteToolInvoker;
+import com.agentflow.ability.tool.ToolConflictException;
+import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

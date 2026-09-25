@@ -3,11 +3,11 @@ package com.agentflow.api;
 import java.io.IOException;
 import java.util.function.Consumer;
 
-import com.agentflow.core.state.RunStatus;
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.RunStatus;
+import com.agentflow.engine.model.state.WorkflowState;
 import com.agentflow.runtime.checkpoint.CheckpointStore;
-import com.agentflow.runtime.stream.RunProgress;
-import com.agentflow.runtime.stream.RunProgressBus;
+import com.agentflow.runtime.progress.RunProgress;
+import com.agentflow.runtime.progress.RunProgressBus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

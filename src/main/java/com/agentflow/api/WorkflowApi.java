@@ -3,10 +3,10 @@ package com.agentflow.api;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.core.dsl.GraphParser;
-import com.agentflow.core.dsl.GraphValidator;
-import com.agentflow.core.model.WorkflowDefinition;
-import com.agentflow.core.store.WorkflowStore;
+import com.agentflow.engine.parse.GraphParser;
+import com.agentflow.engine.parse.GraphValidator;
+import com.agentflow.engine.model.definition.WorkflowDefinition;
+import com.agentflow.engine.parse.WorkflowStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * RAG 知识库灌库接口（T6.4）——把文档灌进向量库，打 collection 元数据标签。
  *
- * <p><b>collection 标签是检索闭环的关键</b>：T6.1 的 {@link com.agentflow.rag.VectorStoreRetriever}
+ * <p><b>collection 标签是检索闭环的关键</b>：T6.1 的 {@link com.agentflow.ability.rag.VectorStoreRetriever}
  * 用 {@code metadata.collection == name} 过滤（FilterExpressionBuilder），灌库不打这个标签检索就过滤不到。
  * 成功返回 200 + {@code {"ingested": N}}；name / documents 为空 → 400（ApiExceptionHandler 统一转）。
  *

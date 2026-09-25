@@ -3,7 +3,7 @@ package com.agentflow.runtime.checkpoint;
 import java.util.List;
 import java.util.function.Function;
 
-import com.agentflow.core.state.WorkflowState;
+import com.agentflow.engine.model.state.WorkflowState;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.RedisOperations;

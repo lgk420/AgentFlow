@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class RegisterToolRequest {
 
     /**
-     * 工具名，注册中心内唯一；重名抛 {@link com.agentflow.tool.ToolConflictException}。
+     * 工具名，注册中心内唯一；重名抛 {@link com.agentflow.ability.tool.ToolConflictException}。
      */
     private String name;
 
@@ -26,7 +26,7 @@ public class RegisterToolRequest {
     private JsonNode parameters;
 
     /**
-     * 回调地址：引擎 invoke 时 POST 参数过去，解析响应（{@link com.agentflow.tool.RemoteToolInvoker}）。
+     * 回调地址：引擎 invoke 时 POST 参数过去，解析响应（{@link com.agentflow.ability.tool.RemoteToolInvoker}）。
      */
     private String url;
 
