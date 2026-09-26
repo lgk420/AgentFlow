@@ -3,7 +3,7 @@ package com.agentflow.ability.memory;
 import java.util.List;
 import java.util.UUID;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,8 +41,8 @@ class JdbcMemoryStoreTest {
 
     private void appendTurn(String runId, String userText, String assistantText) {
         memoryStore.append(sessionId, runId, List.of(
-                ChatMessage.user(userText),
-                ChatMessage.assistant(assistantText, List.of())));
+                LlmChatMessage.user(userText),
+                LlmChatMessage.assistant(assistantText, List.of())));
     }
 
     @Test
@@ -50,14 +50,14 @@ class JdbcMemoryStoreTest {
         appendTurn("run-1", "我这周练了腿和胸", "【报告】本周训练量…");
         appendTurn("run-2", "换个强度小点的方案", "好，那深蹲降到…");
 
-        List<ChatMessage> history = memoryStore.history(sessionId, 0);
+        List<LlmChatMessage> history = memoryStore.history(sessionId, 0);
 
         assertThat(history).hasSize(4);
-        assertThat(history).extracting(ChatMessage::getContent)
+        assertThat(history).extracting(LlmChatMessage::getContent)
                 .containsExactly("我这周练了腿和胸", "【报告】本周训练量…", "换个强度小点的方案", "好，那深蹲降到…");
-        assertThat(history).extracting(ChatMessage::getRole)
-                .containsExactly(ChatMessage.Role.USER, ChatMessage.Role.ASSISTANT,
-                        ChatMessage.Role.USER, ChatMessage.Role.ASSISTANT);
+        assertThat(history).extracting(LlmChatMessage::getRole)
+                .containsExactly(LlmChatMessage.Role.USER, LlmChatMessage.Role.ASSISTANT,
+                        LlmChatMessage.Role.USER, LlmChatMessage.Role.ASSISTANT);
     }
 
     /**
@@ -68,9 +68,9 @@ class JdbcMemoryStoreTest {
     void sameTransactionRows_stillOrdered_byId() {
         appendTurn("run-1", "第一条", "第二条");
 
-        List<ChatMessage> history = memoryStore.history(sessionId, 0);
+        List<LlmChatMessage> history = memoryStore.history(sessionId, 0);
 
-        assertThat(history).extracting(ChatMessage::getContent).containsExactly("第一条", "第二条");
+        assertThat(history).extracting(LlmChatMessage::getContent).containsExactly("第一条", "第二条");
     }
 
     @Test
@@ -79,10 +79,10 @@ class JdbcMemoryStoreTest {
         appendTurn("run-2", "第2轮提问", "第2轮回答");
         appendTurn("run-3", "第3轮提问", "第3轮回答");
 
-        List<ChatMessage> latest2 = memoryStore.history(sessionId, 2);
+        List<LlmChatMessage> latest2 = memoryStore.history(sessionId, 2);
 
         // 取的是「最近的 2 条」，但返回时按时间正序
-        assertThat(latest2).extracting(ChatMessage::getContent)
+        assertThat(latest2).extracting(LlmChatMessage::getContent)
                 .containsExactly("第3轮提问", "第3轮回答");
     }
 
@@ -91,12 +91,12 @@ class JdbcMemoryStoreTest {
         String otherSession = "test-" + UUID.randomUUID();
         try {
             appendTurn("run-1", "本会话的消息", "本会话的回复");
-            memoryStore.append(otherSession, "run-9", List.of(ChatMessage.user("别的会话")));
+            memoryStore.append(otherSession, "run-9", List.of(LlmChatMessage.user("别的会话")));
 
             assertThat(memoryStore.history(sessionId, 0)).hasSize(2);
             assertThat(memoryStore.history(otherSession, 0)).hasSize(1);
             assertThat(memoryStore.history(sessionId, 0))
-                    .extracting(ChatMessage::getContent).doesNotContain("别的会话");
+                    .extracting(LlmChatMessage::getContent).doesNotContain("别的会话");
         } finally {
             memoryStore.clear(otherSession);
         }
@@ -107,7 +107,7 @@ class JdbcMemoryStoreTest {
         String otherSession = "test-" + UUID.randomUUID();
         try {
             appendTurn("run-1", "本会话的消息", "本会话的回复");
-            memoryStore.append(otherSession, "run-9", List.of(ChatMessage.user("别的会话")));
+            memoryStore.append(otherSession, "run-9", List.of(LlmChatMessage.user("别的会话")));
 
             memoryStore.clear(sessionId);
 

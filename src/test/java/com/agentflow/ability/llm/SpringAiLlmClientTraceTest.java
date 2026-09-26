@@ -3,6 +3,10 @@ package com.agentflow.ability.llm;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.agentflow.ability.llm.dto.LlmToolDefinition;
+import com.agentflow.ability.llm.trace.LlmCallTrace;
+import com.agentflow.ability.llm.trace.LlmTracer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,16 +27,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * T4.5 网关埋点测试——{@link SpringAiLlmGateway} 每次调用都记一条 {@link LlmCallTrace}。
+ * T4.5 客户端埋点测试——{@link SpringAiLlmClient} 每次调用都记一条 {@link LlmCallTrace}。
  *
  * <p>用 Mockito 全 mock（不构造真实 Spring AI 响应对象），断言 trace 含 model / token / 输入输出 / 工具调用数；
  * 调用失败也记一条 ERROR trace。
  */
-class SpringAiLlmGatewayTraceTest {
+class SpringAiLlmClientTraceTest {
 
     private final ChatModel chatModel = mock(ChatModel.class);
-    private final RecordingTracer tracer = new RecordingTracer();
-    private final SpringAiLlmGateway gateway = new SpringAiLlmGateway(chatModel, new ObjectMapper(), tracer);
+    private final RecordingLlmTracer tracer = new RecordingLlmTracer();
+    private final SpringAiLlmClient gateway = new SpringAiLlmClient(chatModel, new ObjectMapper(), tracer);
 
     @Test
     void chat_recordsTrace_withModelTokensInputOutput() {
@@ -73,7 +77,7 @@ class SpringAiLlmGatewayTraceTest {
 
         // schema 需带 properties（Spring AI FunctionToolCallback 要求能推断 inputType）
         gateway.chatWithTools("系统提示", List.of(),
-                List.of(new ToolSpec("calc", "两数运算", "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"}}}")));
+                List.of(new LlmToolDefinition("calc", "两数运算", "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"}}}")));
 
         assertThat(tracer.traces).hasSize(1);
         assertThat(tracer.traces.get(0).toolCallCount()).isEqualTo(1);
@@ -89,7 +93,7 @@ class SpringAiLlmGatewayTraceTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(response);
 
         gateway.chatWithTools("系统提示", List.of(),
-                List.of(new ToolSpec("calc", "两数运算", "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"}}}")));
+                List.of(new LlmToolDefinition("calc", "两数运算", "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"number\"}}}")));
 
         ArgumentCaptor<Prompt> captor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(captor.capture());
@@ -101,7 +105,7 @@ class SpringAiLlmGatewayTraceTest {
     void chat_error_recordsErrorTrace() {
         when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("网络挂了"));
 
-        assertThatThrownBy(() -> gateway.chat("sys", "输入")).isInstanceOf(LlmGatewayException.class);
+        assertThatThrownBy(() -> gateway.chat("sys", "输入")).isInstanceOf(LlmClientException.class);
 
         assertThat(tracer.traces).hasSize(1);
         assertThat(tracer.traces.get(0).output()).contains("ERROR").contains("网络挂了");
@@ -111,7 +115,7 @@ class SpringAiLlmGatewayTraceTest {
     /**
      * 记录型 Tracer（测试替身）：不打印，收进列表供断言。
      */
-    static class RecordingTracer implements Tracer {
+    static class RecordingLlmTracer implements LlmTracer {
 
         final List<LlmCallTrace> traces = new ArrayList<>();
 

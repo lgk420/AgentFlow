@@ -3,8 +3,7 @@ package com.agentflow.engine.scheduler;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.llm.LlmGateway;
-import com.agentflow.ability.llm.LlmStructuredChat;
+import com.agentflow.ability.llm.LlmClient;
 import com.agentflow.engine.model.definition.EdgeDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,11 +24,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class LlmRouter {
 
-    private final LlmGateway llmGateway;
+    private final LlmClient llmClient;
     private final ObjectMapper mapper;
 
-    public LlmRouter(LlmGateway llmGateway, ObjectMapper mapper) {
-        this.llmGateway = llmGateway;
+    public LlmRouter(LlmClient llmClient, ObjectMapper mapper) {
+        this.llmClient = llmClient;
         this.mapper = mapper;
     }
 
@@ -44,8 +43,7 @@ public class LlmRouter {
         if (candidates == null || candidates.isEmpty()) {
             throw new IllegalArgumentException("LLM_DYNAMIC 路由无候选边");
         }
-        Map<String, Object> parsed = LlmStructuredChat.chatStructured(llmGateway, mapper,
-                buildPrompt(candidates, upstreamOutput), buildSchema(candidates));
+        Map<String, Object> parsed = llmClient.chatStructured(buildPrompt(candidates, upstreamOutput), buildSchema(candidates));
         Object nextNode = parsed.get("nextNode");
         if (nextNode != null && candidates.stream().anyMatch(c -> c.getTo().equals(nextNode.toString()))) {
             return nextNode.toString();

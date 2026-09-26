@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.StubLlmGateway;
+import com.agentflow.ability.llm.StubLlmClient;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -417,8 +417,8 @@ class WorkflowExecutorTest {
 
     @Test
     void llmDynamic_routesToChosenBranch_andDeadBranchesNotExecuted() throws Exception {
-        // 路由网关返回 analysis_query；classify 用 StubLlmNodeExecutor（返回 stubOutput），不与路由网关冲突
-        StubLlmGateway routerGateway = new StubLlmGateway();
+        // 路由客户端返回 analysis_query；classify 用 StubLlmNodeExecutor（返回 stubOutput），不与路由客户端冲突
+        StubLlmClient routerGateway = new StubLlmClient();
         routerGateway.setTextOutput("{\"nextNode\":\"analysis_query\"}");
         LlmRouter router = new LlmRouter(routerGateway, new ObjectMapper());
         WorkflowExecutor dynamic = new WorkflowExecutor(

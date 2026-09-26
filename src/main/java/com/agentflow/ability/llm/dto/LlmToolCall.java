@@ -1,9 +1,9 @@
-package com.agentflow.ability.llm;
+package com.agentflow.ability.llm.dto;
 
 /**
  * 一次工具调用请求（AgenticLoop 手写循环用）——轻量类型，不泄漏框架的 ToolCall。
  */
-public class ToolCall {
+public class LlmToolCall {
 
     /**
      * 工具调用 id（模型侧生成）。TOOL 结果消息靠它与 assistant 的 tool_call 配对
@@ -21,14 +21,7 @@ public class ToolCall {
      */
     private String arguments;
 
-    public ToolCall() {
-    }
-
-    public ToolCall(String name, String arguments) {
-        this(null, name, arguments);
-    }
-
-    public ToolCall(String id, String name, String arguments) {
+    public LlmToolCall(String id, String name, String arguments) {
         this.id = id;
         this.name = name;
         this.arguments = arguments;

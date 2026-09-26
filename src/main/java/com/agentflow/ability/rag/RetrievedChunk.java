@@ -3,7 +3,7 @@ package com.agentflow.ability.rag;
 import java.util.Map;
 
 /**
- * 一次检索命中——轻量类型，不泄漏 Spring AI 的 {@code Document}（对齐 LlmGateway 的 ChatResult/ToolCall）。
+ * 一次检索命中——轻量类型，不泄漏 Spring AI 的 {@code Document}（对齐 LlmClient 的 ChatResult/ToolCall）。
  * 供 RAG 节点写 {@code {chunks}} 到 state、下游模板 {@code {{nodes.x.output.chunks}}} 引用。
  *
  * <p><b>metadata（T6.5）</b>：从向量库带回来的标签（灌库时写入）。检索层靠它标识命中来源——

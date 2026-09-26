@@ -2,10 +2,10 @@ package com.agentflow.ability.tool.mcp;
 
 import java.util.List;
 
+import com.agentflow.ability.llm.dto.LlmToolCall;
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.ChatResult;
-import com.agentflow.ability.llm.StubLlmGateway;
-import com.agentflow.ability.llm.ToolCall;
+import com.agentflow.ability.llm.dto.LlmChatResult;
+import com.agentflow.ability.llm.StubLlmClient;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.node.AgenticLoopExecutor;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -36,10 +36,10 @@ class McpAgenticLoopTest {
                 registry.register(adapter.adapt(tool));
             }
 
-            StubLlmGateway gateway = new StubLlmGateway();
+            StubLlmClient gateway = new StubLlmClient();
             gateway.setToolDialogues(
-                    new ChatResult(null, List.of(new ToolCall("call_1", "demo_calc", "{\"op\":\"mul\",\"a\":6,\"b\":7}"))),
-                    new ChatResult("6×7=42", List.of()));
+                    new LlmChatResult(null, List.of(new LlmToolCall("call_1", "demo_calc", "{\"op\":\"mul\",\"a\":6,\"b\":7}"))),
+                    new LlmChatResult("6×7=42", List.of()));
 
             AgenticLoopExecutor loop = new AgenticLoopExecutor(gateway, registry,
                     new TemplateResolver(), TestTemplateContext.withoutMemory(), new ObjectMapper());

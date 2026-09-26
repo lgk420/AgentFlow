@@ -1,15 +1,14 @@
 package com.agentflow.ability.tool.builtin;
 
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.ChatMessage;
-import com.agentflow.ability.llm.ChatResult;
-import com.agentflow.ability.llm.LlmGateway;
-import com.agentflow.ability.llm.ToolSpec;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatResult;
+import com.agentflow.ability.llm.LlmClient;
+import com.agentflow.ability.llm.dto.LlmToolDefinition;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.node.LlmNodeExecutor;
@@ -28,6 +27,8 @@ import com.agentflow.ability.tool.ToolDescriptor;
 import com.agentflow.ability.tool.ToolRegistry;
 import com.agentflow.ability.tool.ToolSchemaValidator;
 import com.agentflow.ability.tool.annotation.AgentToolRegistrar;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +60,7 @@ class FitnessCoachToolsEndToEndTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private WorkflowExecutor engine;
     private WorkflowDefinition wf;
-    private ScriptedLlmGateway gateway;
+    private ScriptedLlmClient gateway;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -79,7 +80,7 @@ class FitnessCoachToolsEndToEndTest {
         register(registry, new TrainingHistoryQueryTool(redis));
         register(registry, new WorkoutMetricsTool());
 
-        gateway = new ScriptedLlmGateway();
+        gateway = new ScriptedLlmClient();
         TemplateResolver resolver = new TemplateResolver(mapper);
         engine = new WorkflowExecutor(
                 new InMemoryCheckpointStore(),
@@ -87,7 +88,7 @@ class FitnessCoachToolsEndToEndTest {
                 new ConditionEvaluator(),
                 List.of(
                         new StartNodeExecutor(),
-                        new LlmNodeExecutor(gateway, resolver, TestTemplateContext.withoutMemory(), mapper),
+                        new LlmNodeExecutor(gateway, resolver, TestTemplateContext.withoutMemory()),
                         new ToolNodeExecutor(registry, resolver, TestTemplateContext.withoutMemory()),
                         new AgenticLoopExecutor(gateway, registry, resolver, TestTemplateContext.withoutMemory(), mapper)), null);
 
@@ -176,7 +177,12 @@ class FitnessCoachToolsEndToEndTest {
     /**
      * 脚本化 LLM 桩：按 prompt 内容分发。parse 按 userLog 日期返回对应 JSON（模板绑定已把 userLog 拼进 prompt）。
      */
-    static class ScriptedLlmGateway implements LlmGateway {
+    static class ScriptedLlmClient implements LlmClient {
+
+        /**
+         * 解析 {@link #chat} 返回的预置 JSON（桩不引 Jackson 外部依赖，自带一个即可）。
+         */
+        private final ObjectMapper mapper = new ObjectMapper();
 
         @Override
         public String chat(String system, String user) {
@@ -202,8 +208,18 @@ class FitnessCoachToolsEndToEndTest {
         }
 
         @Override
-        public ChatResult chatWithTools(String system, List<ChatMessage> history, List<ToolSpec> tools) {
-            return new ChatResult("复盘报告：容量与强度稳定。处方：按 腿→胸→背 轮换，下次练腿。", List.of());
+        public Map<String, Object> chatStructured(String prompt, JsonNode schema) {
+            // 与 chat() 同一套按 prompt 分发；把返回的 JSON 解析成 Map——模拟真实模型往返
+            try {
+                return mapper.readValue(chat(null, prompt), Map.class);
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("ScriptedLlmClient 预置 JSON 解析失败", e);
+            }
+        }
+
+        @Override
+        public LlmChatResult chatWithTools(String system, List<LlmChatMessage> history, List<LlmToolDefinition> tools) {
+            return new LlmChatResult("复盘报告：容量与强度稳定。处方：按 腿→胸→背 轮换，下次练腿。", List.of());
         }
     }
 }

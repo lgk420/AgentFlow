@@ -1,13 +1,9 @@
 package com.agentflow.engine.node;
 
-import com.agentflow.engine.node.MemoryWriteNodeExecutor;
-
-import com.agentflow.engine.node.WorkflowExecutionException;
-
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.engine.template.TemplateContextFactory;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -55,11 +51,11 @@ class MemoryWriteNodeExecutorTest {
                 "user", "{{inputs.userMessage}}",
                 "assistant", "【报告】本周训练量…")), state("sess-1"));
 
-        List<ChatMessage> history = memoryStore.history("sess-1", 0);
-        assertThat(history).extracting(ChatMessage::getContent)
+        List<LlmChatMessage> history = memoryStore.history("sess-1", 0);
+        assertThat(history).extracting(LlmChatMessage::getContent)
                 .containsExactly("我这周练了腿和胸", "【报告】本周训练量…");
-        assertThat(history).extracting(ChatMessage::getRole)
-                .containsExactly(ChatMessage.Role.USER, ChatMessage.Role.ASSISTANT);
+        assertThat(history).extracting(LlmChatMessage::getRole)
+                .containsExactly(LlmChatMessage.Role.USER, LlmChatMessage.Role.ASSISTANT);
         assertThat(output).isEqualTo(Map.of("written", 2));
         // runId 一并记下，供溯源
         assertThat(memoryStore.getAppendedRunIds()).containsExactly("run-1");
@@ -114,7 +110,7 @@ class MemoryWriteNodeExecutorTest {
                 "assistant", "{{nodes.reply.output}}")), state);
 
         assertThat(memoryStore.history("sess-5", 0))
-                .extracting(ChatMessage::getContent)
+                .extracting(LlmChatMessage::getContent)
                 .containsExactly("我这周练了腿和胸", "【报告】深蹲 3×12");
     }
 }

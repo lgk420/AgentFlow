@@ -2,7 +2,7 @@ package com.agentflow.ability.memory;
 
 import java.util.List;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 
 /**
  * 对话记忆存取（T10.1）——跨会话存活的对话历史，供多轮追问时取回上下文。
@@ -30,7 +30,7 @@ public interface MemoryStore {
      * @param runId     产生这些消息的运行 id，可空（用于溯源）
      * @param messages  按时间正序的消息
      */
-    void append(String sessionId, String runId, List<ChatMessage> messages);
+    void append(String sessionId, String runId, List<LlmChatMessage> messages);
 
     /**
      * 取会话最近 limit 条消息，按时间正序返回。
@@ -39,7 +39,7 @@ public interface MemoryStore {
      *
      * @param limit 最多取几条；≤0 表示不限制
      */
-    List<ChatMessage> history(String sessionId, int limit);
+    List<LlmChatMessage> history(String sessionId, int limit);
 
     /**
      * 清空某个会话的全部记忆。用于「开始新话题」或测试清理。

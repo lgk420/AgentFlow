@@ -1,11 +1,11 @@
-package com.agentflow.ability.llm;
+package com.agentflow.ability.llm.dto;
 
 import java.util.List;
 
 /**
  * 带工具对话的结果：要么返回文本（模型直接回答），要么返回工具调用列表（模型要求调工具）。
  */
-public class ChatResult {
+public class LlmChatResult {
 
     /**
      * 模型文本回复；有工具调用时可能为 null。
@@ -15,14 +15,11 @@ public class ChatResult {
     /**
      * 工具调用列表；无工具调用时为空。
      */
-    private List<ToolCall> toolCalls = List.of();
+    private List<LlmToolCall> llmToolCalls;
 
-    public ChatResult() {
-    }
-
-    public ChatResult(String text, List<ToolCall> toolCalls) {
+    public LlmChatResult(String text, List<LlmToolCall> llmToolCalls) {
         this.text = text;
-        this.toolCalls = toolCalls;
+        this.llmToolCalls = llmToolCalls;
     }
 
     public String getText() {
@@ -33,18 +30,18 @@ public class ChatResult {
         this.text = text;
     }
 
-    public List<ToolCall> getToolCalls() {
-        return toolCalls;
+    public List<LlmToolCall> getToolCalls() {
+        return llmToolCalls;
     }
 
-    public void setToolCalls(List<ToolCall> toolCalls) {
-        this.toolCalls = toolCalls;
+    public void setToolCalls(List<LlmToolCall> llmToolCalls) {
+        this.llmToolCalls = llmToolCalls;
     }
 
     /**
      * 是否要求调用工具（工具调用列表非空）。
      */
     public boolean wantsTools() {
-        return toolCalls != null && !toolCalls.isEmpty();
+        return llmToolCalls != null && !llmToolCalls.isEmpty();
     }
 }

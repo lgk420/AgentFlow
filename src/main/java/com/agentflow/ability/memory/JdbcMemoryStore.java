@@ -3,7 +3,7 @@ package com.agentflow.ability.memory;
 import java.util.List;
 import java.util.Locale;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Component;
@@ -45,9 +45,9 @@ public class JdbcMemoryStore implements MemoryStore {
 
     private static final String CLEAR_SQL = "DELETE FROM conversation_memory WHERE session_id = ?";
 
-    private static final RowMapper<ChatMessage> MESSAGE_MAPPER = (rs, rowNum) -> switch (rs.getString("role")) {
-        case "user" -> ChatMessage.user(rs.getString("content"));
-        case "assistant" -> ChatMessage.assistant(rs.getString("content"), List.of());
+    private static final RowMapper<LlmChatMessage> MESSAGE_MAPPER = (rs, rowNum) -> switch (rs.getString("role")) {
+        case "user" -> LlmChatMessage.user(rs.getString("content"));
+        case "assistant" -> LlmChatMessage.assistant(rs.getString("content"), List.of());
         default -> throw new IllegalStateException("未知的记忆角色：" + rs.getString("role"));
     };
 
@@ -58,7 +58,7 @@ public class JdbcMemoryStore implements MemoryStore {
     }
 
     @Override
-    public void append(String sessionId, String runId, List<ChatMessage> messages) {
+    public void append(String sessionId, String runId, List<LlmChatMessage> messages) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
@@ -73,7 +73,7 @@ public class JdbcMemoryStore implements MemoryStore {
     }
 
     @Override
-    public List<ChatMessage> history(String sessionId, int limit) {
+    public List<LlmChatMessage> history(String sessionId, int limit) {
         if (limit > 0) {
             return jdbc.query(SELECT_RECENT_SQL, MESSAGE_MAPPER, sessionId, limit);
         }
@@ -86,7 +86,7 @@ public class JdbcMemoryStore implements MemoryStore {
     }
 
     /** 落库用的小写角色名（user / assistant），与 schema.sql 的注释一致。 */
-    private static String roleName(ChatMessage message) {
+    private static String roleName(LlmChatMessage message) {
         return message.getRole().name().toLowerCase(Locale.ROOT);
     }
 }

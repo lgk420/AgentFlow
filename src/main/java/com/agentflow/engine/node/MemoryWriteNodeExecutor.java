@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.engine.template.TemplateContextFactory;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -61,14 +61,14 @@ public class MemoryWriteNodeExecutor implements NodeExecutor {
         }
 
         Map<String, Object> context = templateContextFactory.contextFor(state);
-        List<ChatMessage> messages = new ArrayList<>();
+        List<LlmChatMessage> messages = new ArrayList<>();
         String user = node.getUserMessage();
         if (user != null && !user.isBlank()) {
-            messages.add(ChatMessage.user(templateResolver.resolve(user, context)));
+            messages.add(LlmChatMessage.user(templateResolver.resolve(user, context)));
         }
         String assistant = node.getAssistantReply();
         if (assistant != null && !assistant.isBlank()) {
-            messages.add(ChatMessage.assistant(templateResolver.resolve(assistant, context), List.of()));
+            messages.add(LlmChatMessage.assistant(templateResolver.resolve(assistant, context), List.of()));
         }
 
         if (messages.isEmpty()) {

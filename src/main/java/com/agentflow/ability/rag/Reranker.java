@@ -14,7 +14,7 @@ import java.util.List;
  * 「召回（快而糙，宁可多捞）→ 重排（慢而精，排出名次）」。
  *
  * <p>执行器只依赖本接口，不直接碰 HTTP——换 provider、换实现、测试注入桩都只动这一个 seam
- * （复用 {@link Retriever} 与 {@code LlmGateway} 的同款套路）。
+ * （复用 {@link Retriever} 与 {@code LlmClient} 的同款套路）。
  */
 public interface Reranker {
 

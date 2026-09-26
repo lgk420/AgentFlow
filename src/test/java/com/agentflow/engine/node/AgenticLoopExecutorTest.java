@@ -4,20 +4,17 @@ import com.agentflow.engine.scheduler.ParallelDispatcher;
 
 import com.agentflow.engine.scheduler.WorkflowExecutor;
 
-import com.agentflow.engine.node.StartNodeExecutor;
-
 import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.ChatMessage;
-import com.agentflow.ability.llm.ChatResult;
-import com.agentflow.ability.llm.StubLlmGateway;
-import com.agentflow.ability.llm.ToolCall;
-import com.agentflow.ability.llm.ToolSpec;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatResult;
+import com.agentflow.ability.llm.StubLlmClient;
+import com.agentflow.ability.llm.dto.LlmToolCall;
+import com.agentflow.ability.llm.dto.LlmToolDefinition;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
-import com.agentflow.engine.node.AgenticLoopExecutor;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.definition.WorkflowDefinition;
@@ -39,13 +36,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>验收依据（任务拆解 T4.3）：手写 LLM↔Tool 循环——chat → 有 toolCalls 则调注册中心 → 追加 messages →
  * 直到无 toolCalls 或超 maxIterations；断在 maxIterations 有明确报错。
- * 走 {@link StubLlmGateway} 脚本化多轮，真实模型待环境（Ollama）另行验证。
+ * 走 {@link StubLlmClient} 脚本化多轮，真实模型待环境（Ollama）另行验证。
  */
 class AgenticLoopExecutorTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private final StubLlmGateway gateway = new StubLlmGateway();
+    private final StubLlmClient gateway = new StubLlmClient();
     private final ToolRegistry registry = new ToolRegistry(null); // 本测试不涉及入参校验（T5.3 另有测试）
     private final AgenticLoopExecutor executor =
             new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
@@ -82,19 +79,19 @@ class AgenticLoopExecutorTest {
     void loop_callsToolThenReturnsFinalAnswer() {
         registerCalc("calc");
         gateway.setToolDialogues(
-                new ChatResult(null, List.of(new ToolCall("call_1", "calc", "{\"a\":2,\"b\":3}"))),
-                new ChatResult("答案是 5", List.of()));
+                new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":2,\"b\":3}"))),
+                new LlmChatResult("答案是 5", List.of()));
 
         Object output = executor.execute(loopNode("你是计算器", 5, "calc"), state("goal", "x"));
 
         assertThat(output).isEqualTo("答案是 5");
         // 第二轮传入的历史 = assistant 工具调用轮 + tool 结果轮（含 id 配对与真实执行结果）
-        List<ChatMessage> history = gateway.getLastHistory();
+        List<LlmChatMessage> history = gateway.getLastHistory();
         assertThat(history).hasSize(2);
-        assertThat(history.get(0).getRole()).isEqualTo(ChatMessage.Role.ASSISTANT);
-        assertThat(history.get(0).getToolCalls()).hasSize(1);
-        assertThat(history.get(0).getToolCalls().get(0).getId()).isEqualTo("call_1");
-        assertThat(history.get(1).getRole()).isEqualTo(ChatMessage.Role.TOOL);
+        assertThat(history.get(0).getRole()).isEqualTo(LlmChatMessage.Role.ASSISTANT);
+        assertThat(history.get(0).getLlmToolCalls()).hasSize(1);
+        assertThat(history.get(0).getLlmToolCalls().get(0).getId()).isEqualTo("call_1");
+        assertThat(history.get(1).getRole()).isEqualTo(LlmChatMessage.Role.TOOL);
         assertThat(history.get(1).getToolCallId()).isEqualTo("call_1");
         assertThat(history.get(1).getToolName()).isEqualTo("calc");
         assertThat(history.get(1).getToolResult()).isEqualTo(5); // 工具真被调用并拿到结果
@@ -103,7 +100,7 @@ class AgenticLoopExecutorTest {
     @Test
     void loop_directAnswerWithoutTools() {
         registerCalc("calc"); // 工具可用，但模型选择直接回答
-        gateway.setToolDialogues(new ChatResult("直接回答", List.of()));
+        gateway.setToolDialogues(new LlmChatResult("直接回答", List.of()));
 
         Object output = executor.execute(loopNode("你是教练", 3, "calc"), state("x", "y"));
 
@@ -115,8 +112,8 @@ class AgenticLoopExecutorTest {
     void loop_reachesMaxIterations_throws() {
         registerCalc("calc");
         gateway.setToolDialogues(
-                new ChatResult(null, List.of(new ToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
-                new ChatResult(null, List.of(new ToolCall("call_2", "calc", "{\"a\":2,\"b\":2}"))));
+                new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
+                new LlmChatResult(null, List.of(new LlmToolCall("call_2", "calc", "{\"a\":2,\"b\":2}"))));
 
         assertThatThrownBy(() -> executor.execute(loopNode("你是计算器", 2, "calc"), state("x", "y")))
                 .isInstanceOf(IllegalStateException.class)
@@ -125,7 +122,7 @@ class AgenticLoopExecutorTest {
 
     @Test
     void loop_nodeToolsUnregistered_throws() {
-        gateway.setToolDialogues(new ChatResult("不该走到这", List.of()));
+        gateway.setToolDialogues(new LlmChatResult("不该走到这", List.of()));
 
         assertThatThrownBy(() -> executor.execute(loopNode("教练", 3, "ghost"), state("x", "y")))
                 .isInstanceOf(IllegalStateException.class)
@@ -135,7 +132,7 @@ class AgenticLoopExecutorTest {
     @Test
     void loop_modelCallsUnregisteredTool_throws() {
         registerCalc("calc");
-        gateway.setToolDialogues(new ChatResult(null, List.of(new ToolCall("call_1", "nope", "{}"))));
+        gateway.setToolDialogues(new LlmChatResult(null, List.of(new LlmToolCall("call_1", "nope", "{}"))));
 
         assertThatThrownBy(() -> executor.execute(loopNode("教练", 3, "calc"), state("x", "y")))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -145,11 +142,11 @@ class AgenticLoopExecutorTest {
     @Test
     void tools_resolvedFromRegistry_withSchema() {
         registerCalc("calc");
-        gateway.setToolDialogues(new ChatResult("直接回答", List.of()));
+        gateway.setToolDialogues(new LlmChatResult("直接回答", List.of()));
 
         executor.execute(loopNode("你是计算器", 3, "calc"), state("x", "y"));
 
-        List<ToolSpec> tools = gateway.getLastTools();
+        List<LlmToolDefinition> tools = gateway.getLastTools();
         assertThat(tools).hasSize(1);
         assertThat(tools.get(0).getName()).isEqualTo("calc");
         assertThat(tools.get(0).getInputSchema()).contains("\"number\"");
@@ -158,7 +155,7 @@ class AgenticLoopExecutorTest {
     @Test
     void systemPrompt_templateResolved() {
         registerCalc("calc");
-        gateway.setToolDialogues(new ChatResult("收到", List.of()));
+        gateway.setToolDialogues(new LlmChatResult("收到", List.of()));
 
         executor.execute(loopNode("目标：{{inputs.goal}}", 3, "calc"), state("goal", "减脂"));
 
@@ -169,8 +166,8 @@ class AgenticLoopExecutorTest {
     void endToEnd_agenticLoopInWorkflow() throws Exception {
         registerCalc("calc");
         gateway.setToolDialogues(
-                new ChatResult(null, List.of(new ToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
-                new ChatResult("容量是 2", List.of()));
+                new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
+                new LlmChatResult("容量是 2", List.of()));
 
         WorkflowExecutor workflowExecutor = new WorkflowExecutor(
                 new InMemoryCheckpointStore(),

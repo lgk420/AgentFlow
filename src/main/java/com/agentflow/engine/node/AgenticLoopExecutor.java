@@ -1,18 +1,16 @@
 package com.agentflow.engine.node;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.llm.ChatMessage;
-import com.agentflow.ability.llm.ChatResult;
-import com.agentflow.ability.llm.LlmGateway;
-import com.agentflow.ability.llm.ToolCall;
-import com.agentflow.ability.llm.ToolSpec;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatResult;
+import com.agentflow.ability.llm.LlmClient;
+import com.agentflow.ability.llm.dto.LlmToolCall;
+import com.agentflow.ability.llm.dto.LlmToolDefinition;
 import com.agentflow.engine.template.TemplateContextFactory;
 import com.agentflow.engine.template.TemplateResolver;
-import com.agentflow.engine.node.NodeExecutor;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.WorkflowState;
@@ -28,7 +26,7 @@ import org.springframework.stereotype.Component;
  * <p>整轮循环 = <b>一次节点执行</b>（与引擎调度解耦：checkpoint 粒度与失败重试都在"整轮"层面，T2.6）。
  * 每轮：
  * <pre>
- * resp = LlmGateway.chatWithTools(systemPrompt, history, tools)
+ * resp = LlmClient.chatWithTools(systemPrompt, history, tools)
  * 无 toolCalls → 返回文本最终答案
  * 有 toolCalls → 先追加"assistant 工具调用轮"，再逐条调 ToolRegistry.invoke 追加"tool 结果轮"
  * </pre>
@@ -40,16 +38,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgenticLoopExecutor implements NodeExecutor {
 
-    private final LlmGateway llmGateway;
+    private final LlmClient llmClient;
     private final ToolRegistry toolRegistry;
     private final TemplateResolver templateResolver;
     private final TemplateContextFactory templateContextFactory;
     private final ObjectMapper mapper;
 
-    public AgenticLoopExecutor(LlmGateway llmGateway, ToolRegistry toolRegistry,
+    public AgenticLoopExecutor(LlmClient llmClient, ToolRegistry toolRegistry,
                                TemplateResolver templateResolver, TemplateContextFactory templateContextFactory,
                                ObjectMapper mapper) {
-        this.llmGateway = llmGateway;
+        this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
         this.templateResolver = templateResolver;
         this.templateContextFactory = templateContextFactory;
@@ -65,26 +63,26 @@ public class AgenticLoopExecutor implements NodeExecutor {
     public Object execute(NodeDefinition node, WorkflowState state) {
         String systemPrompt = node.getSystemPrompt() == null ? null
                 : templateResolver.resolve(node.getSystemPrompt(), templateContextFactory.contextFor(state));
-        List<ToolSpec> tools = resolveTools(node);
-        List<ChatMessage> history = new ArrayList<>();
+        List<LlmToolDefinition> tools = resolveTools(node);
+        List<LlmChatMessage> history = new ArrayList<>();
         int maxIterations = node.getMaxIterations();
 
         for (int i = 0; i < maxIterations; i++) {
-            ChatResult result = llmGateway.chatWithTools(systemPrompt, history, tools);
+            LlmChatResult result = llmClient.chatWithTools(systemPrompt, history, tools);
             if (!result.wantsTools()) {
                 return result.getText(); // 模型给出最终答案
             }
             // 先追加整轮 assistant 工具调用，再逐条追加 tool 结果（OpenAI 兼容 API 要求 tool_calls 在 tool 结果之前）
-            history.add(ChatMessage.assistant(result.getText(), result.getToolCalls()));
-            for (ToolCall call : result.getToolCalls()) {
+            history.add(LlmChatMessage.assistant(result.getText(), result.getToolCalls()));
+            for (LlmToolCall call : result.getToolCalls()) {
                 Object toolResult = invokeTool(call);
-                history.add(ChatMessage.tool(call.getId(), call.getName(), toolResult));
+                history.add(LlmChatMessage.tool(call.getId(), call.getName(), toolResult));
             }
         }
         throw new IllegalStateException("达到 maxIterations=" + maxIterations + "，模型仍未给出最终答案");
     }
 
-    private Object invokeTool(ToolCall call) {
+    private Object invokeTool(LlmToolCall call) {
         return toolRegistry.invoke(call.getName(), parseArguments(call.getArguments()));
     }
 
@@ -104,16 +102,16 @@ public class AgenticLoopExecutor implements NodeExecutor {
     }
 
     /**
-     * node.tools → ToolSpec（从注册中心查 ToolDescriptor 组装，QA 49 修订①）。
+     * node.tools → LlmToolDefinition（从注册中心查 ToolDescriptor 组装，QA 49 修订①）。
      */
-    private List<ToolSpec> resolveTools(NodeDefinition node) {
+    private List<LlmToolDefinition> resolveTools(NodeDefinition node) {
         return node.getTools().stream().map(name -> {
             ToolDescriptor d = toolRegistry.get(name);
             if (d == null) {
                 throw new IllegalStateException("工具未注册: " + name);
             }
             String schema = d.getParameters() == null ? null : d.getParameters().toString();
-            return new ToolSpec(name, d.getDescription(), schema);
+            return new LlmToolDefinition(name, d.getDescription(), schema);
         }).toList();
     }
 }

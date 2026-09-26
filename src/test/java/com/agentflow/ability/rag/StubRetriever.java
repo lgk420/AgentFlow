@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * 检索测试替身（T6.3，QA 67 打桩层）——返回固定 chunks、记录最近一次检索参数供断言。
- * 非 bean，仅测试构造用（同 StubLlmGateway 套路）。
+ * 非 bean，仅测试构造用（同 StubLlmClient 套路）。
  */
 public class StubRetriever implements Retriever {
 

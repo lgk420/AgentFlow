@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.StubLlmGateway;
+import com.agentflow.ability.llm.StubLlmClient;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -30,19 +30,22 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * T4.2 LlmNodeExecutor 验收测试。
  *
- * <p>覆盖：模板解析 prompt；结构化输出（prompt 附 schema + JSON 解析成 Map）；非 JSON 抛错；
+ * <p>覆盖：模板解析 prompt；结构化输出走 {@code chatStructured} 并原样返回 Map；
  * 端到端跑图（classify 节点输出合法 {category}，END 聚合）。
+ *
+ * <p><b>结构化输出的实现细节不在这里测</b>——「拼 schema 指令 / 剥 markdown 围栏 / 非法 JSON 报错」
+ * 是 {@code SpringAiLlmClient} 的职责，测试在 {@code SpringAiLlmClientChatStructuredTest}。
+ * 这里只验证 executor 把模板解析后正确地传下去、并返回结果。
  */
 class LlmNodeExecutorTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final StubLlmGateway gateway = new StubLlmGateway();
-    private final LlmNodeExecutor executor = new LlmNodeExecutor(gateway, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
+    private final StubLlmClient gateway = new StubLlmClient();
+    private final LlmNodeExecutor executor = new LlmNodeExecutor(gateway, new TemplateResolver(), TestTemplateContext.withoutMemory());
 
     private NodeDefinition llmNode(String prompt, String schemaJson) throws Exception {
         NodeDefinition node = new NodeDefinition();
@@ -71,42 +74,21 @@ class LlmNodeExecutorTest {
     }
 
     @Test
-    void structuredOutput_promptAppendsSchema_andParsesJson() throws Exception {
-        gateway.setTextOutput("{\"category\":\"ANALYSIS\"}");
+    void structuredOutput_resolvesPrompt_andReturnsMap() throws Exception {
+        gateway.setStructuredOutput(Map.of("category", "ANALYSIS"));
         Object output = executor.execute(
                 llmNode("分类：{{inputs.userMessage}}",
                         "{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\"}},\"required\":[\"category\"]}"),
                 stateWithInput("userMessage", "练背"));
 
         assertThat(output).isEqualTo(Map.of("category", "ANALYSIS"));
-        assertThat(gateway.getLastUserPrompt()).contains("分类：练背").contains("category").contains("必须只输出");
-    }
-
-    @Test
-    void structuredOutput_fencedJson_isTolerated() throws Exception {
-        // docs/bugs/01：真实链路模型会把 JSON 包进 markdown 代码块（```json ... ```），解析前剥围栏 + prompt 明确禁止
-        gateway.setTextOutput("```json\n{\"category\":\"ANALYSIS\"}\n```");
-        Object output = executor.execute(
-                llmNode("分类：{{inputs.userMessage}}",
-                        "{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\"}},\"required\":[\"category\"]}"),
-                stateWithInput("userMessage", "练背"));
-
-        assertThat(output).isEqualTo(Map.of("category", "ANALYSIS"));
-        assertThat(gateway.getLastUserPrompt()).contains("不要用 markdown 代码块");
-    }
-
-    @Test
-    void structuredOutput_invalidJson_throws() throws Exception {
-        gateway.setTextOutput("这不是 JSON");
-        assertThatThrownBy(() -> executor.execute(llmNode("p", "{\"type\":\"object\"}"), stateWithInput("x", "y")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("不是合法 JSON");
+        assertThat(gateway.getLastStructuredPrompt()).isEqualTo("分类：练背"); // 模板已解析，且只传业务提示词
     }
 
     @Test
     void endToEnd_classifyNode_outputsValidCategory() throws Exception {
-        // 验收：健身 DSL 的 classify 能输出合法 {category}（走 Stub 网关，真实模型待环境）
-        gateway.setTextOutput("{\"category\":\"ANALYSIS\"}");
+        // 验收：健身 DSL 的 classify 能输出合法 {category}（走 Stub 客户端，真实模型待环境）
+        gateway.setStructuredOutput(Map.of("category", "ANALYSIS"));
         WorkflowExecutor workflowExecutor = new WorkflowExecutor(
                 new InMemoryCheckpointStore(),
                 new ParallelDispatcher(4),

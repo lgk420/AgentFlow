@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * T6.1 VectorStoreRetriever 单元测试（打桩：假 VectorStore 返回固定 Document，见 QA 67）。
  *
  * <p>验证包装逻辑：query/topK/collection 正确透传成 SearchRequest、Document → RetrievedChunk 映射。
- * 真实 pgvector + Ollama 嵌入的端到端验收留 T6.2（同 LlmGatewayTest 走 Stub 的套路）。
+ * 真实 pgvector + Ollama 嵌入的端到端验收留 T6.2（同 LlmClientTest 走 Stub 的套路）。
  */
 class VectorStoreRetrieverTest {
 

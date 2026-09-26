@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.agentflow.ability.llm.ChatMessage;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.engine.model.state.WorkflowState;
 import com.agentflow.ability.memory.MemoryProperties;
 import com.agentflow.ability.memory.MemoryStore;
@@ -60,7 +60,7 @@ public class TemplateContextFactory {
         if (!memoryProperties.isEnabled() || sessionId == null || sessionId.isBlank()) {
             return Map.of();
         }
-        List<ChatMessage> history = memoryStore.history(sessionId, memoryProperties.getHistoryLimit());
+        List<LlmChatMessage> history = memoryStore.history(sessionId, memoryProperties.getHistoryLimit());
         Map<String, Object> namespace = new LinkedHashMap<>();
         // history 给结构化数据（模板会序列化成 JSON）；historyText 给 prompt 友好的文本
         namespace.put("history", history);
@@ -74,7 +74,7 @@ public class TemplateContextFactory {
      * <p>直接把 JSON 塞进 prompt 也能用，但可读性差、模型要额外解析一层；
      * 而这段历史的唯一用途就是喂 prompt，所以文本形式更合适。
      */
-    private static String renderHistory(List<ChatMessage> history) {
+    private static String renderHistory(List<LlmChatMessage> history) {
         return history.stream()
                 .map(message -> switch (message.getRole()) {
                     case USER -> "用户：" + message.getContent();

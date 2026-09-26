@@ -6,7 +6,7 @@ import java.util.List;
  * 检索抽象（T6.1，P6 RAG）。
  *
  * <p>引擎（RagNodeExecutor，T6.3）只依赖本接口，不直接碰 Spring AI VectorStore——换实现、测试注入
- * 假存储都只动这一个 seam（复用 {@code LlmGateway} 同款套路，见 QA 67）。
+ * 假存储都只动这一个 seam（复用 {@code LlmClient} 同款套路，见 QA 67）。
  * 参数直接对应 RAG 节点 config 的 {@code query / topK / collection}（NodeDefinition#getQuery 等）。
  */
 public interface Retriever {

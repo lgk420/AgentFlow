@@ -1,4 +1,4 @@
-package com.agentflow.ability.llm;
+package com.agentflow.ability.llm.trace;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,12 +8,12 @@ import org.springframework.stereotype.Component;
  * 打印版 LLM 埋点（T4.5）——把每次调用按行打日志：model / 耗时 / token / 工具调用数 / 输入输出。
  *
  * <p>输入输出各截断 {@value #TRUNCATE_LEN} 字（长 prompt/响应不刷屏）；trace 载荷本身保留全量
- * （P8 落库用全量）。P8 换 Redis / TraceSpan 实现时不动网关。
+ * （P8 落库用全量）。P8 换 Redis / TraceSpan 实现时不动客户端。
  */
 @Component
-public class LoggingLlmTracer implements Tracer {
+public class LogLlmTracer implements LlmTracer {
 
-    private static final Logger log = LoggerFactory.getLogger(LoggingLlmTracer.class);
+    private static final Logger log = LoggerFactory.getLogger(LogLlmTracer.class);
 
     /**
      * 输入 / 输出日志截断长度。
