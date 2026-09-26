@@ -4,6 +4,8 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.VectorStoreRagRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
@@ -25,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 真实 Ollama + bge-m3 的端到端验收见 {@link OllamaEmbeddingRetrievalTest}。
  */
 @Testcontainers
-class VectorStoreRetrieverIntegrationTest {
+class VectorStoreRagRetrieverIntegrationTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
@@ -47,15 +49,15 @@ class VectorStoreRetrieverIntegrationTest {
                 .initializeSchema(true)
                 .build();
         store.afterPropertiesSet(); // 非 Spring 管理，手动触发建表
-        VectorStoreRetriever retriever = new VectorStoreRetriever(store);
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(store);
 
         store.add(List.of(
                 Document.builder().text("背部训练：坐姿钢线划船").build(),
                 Document.builder().text("腿部训练：深蹲").build()));
 
-        List<RetrievedChunk> chunks = retriever.retrieve("练背", 2, null);
+        List<RagChunk> chunks = retriever.retrieve("练背", 2, null);
 
-        assertThat(chunks).extracting(RetrievedChunk::getContent).contains("背部训练：坐姿钢线划船");
+        assertThat(chunks).extracting(RagChunk::getContent).contains("背部训练：坐姿钢线划船");
         assertThat(chunks.get(0).getScore()).isGreaterThan(0);
     }
 }

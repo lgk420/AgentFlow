@@ -1,24 +1,19 @@
 package com.agentflow.engine.node;
 
-import com.agentflow.engine.node.RagNodeExecutor;
-
-import com.agentflow.engine.node.WorkflowExecutionException;
-
 import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.memory.TestTemplateContext;
+import com.agentflow.ability.rag.StubRagReranker;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.NodeOutput;
 import com.agentflow.engine.model.state.NodeStatus;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.rag.RerankProperties;
-import com.agentflow.ability.rag.RetrievalProperties;
-import com.agentflow.ability.rag.RetrievedChunk;
-import com.agentflow.ability.rag.StubReranker;
-import com.agentflow.ability.rag.StubRetriever;
+import com.agentflow.ability.rag.RagProperties;
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.StubRagRetriever;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,21 +29,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class RagNodeExecutorTest {
 
-    private static final List<RetrievedChunk> THREE_CHUNKS = List.of(
-            new RetrievedChunk("向量第一名", 0.9),
-            new RetrievedChunk("向量第二名", 0.8),
-            new RetrievedChunk("向量第三名", 0.7));
+    private static final List<RagChunk> THREE_CHUNKS = List.of(
+            new RagChunk("向量第一名", 0.9),
+            new RagChunk("向量第二名", 0.8),
+            new RagChunk("向量第三名", 0.7));
 
-    private final StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("背部渐进超负荷", 0.9)));
-    private final StubReranker reranker = StubReranker.passthrough();
-    private final RerankProperties rerankProperties = new RerankProperties();
-    private final RetrievalProperties retrievalProperties = new RetrievalProperties();
-    private final RagNodeExecutor executor = newExecutor(retriever, reranker, rerankProperties, retrievalProperties);
+    private final StubRagRetriever retriever = new StubRagRetriever(List.of(new RagChunk("背部渐进超负荷", 0.9)));
+    private final StubRagReranker reranker = StubRagReranker.passthrough();
+    private final RagProperties baseProperties = new RagProperties();
+    private final RagNodeExecutor executor = newExecutor(retriever, reranker, baseProperties);
 
-    private static RagNodeExecutor newExecutor(StubRetriever retriever, StubReranker reranker,
-                                               RerankProperties rerankProperties,
-                                               RetrievalProperties retrievalProperties) {
-        return new RagNodeExecutor(retriever, reranker, rerankProperties, retrievalProperties, new TemplateResolver(), TestTemplateContext.withoutMemory());
+    private static RagNodeExecutor newExecutor(StubRagRetriever retriever, StubRagReranker reranker,
+                                               RagProperties ragProperties) {
+        return new RagNodeExecutor(retriever, reranker, ragProperties, new TemplateResolver(), TestTemplateContext.withoutMemory());
     }
 
     private static NodeDefinition ragNode(Map<String, Object> config) {
@@ -65,8 +58,8 @@ class RagNodeExecutorTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<RetrievedChunk> chunksOf(Object output) {
-        return (List<RetrievedChunk>) ((Map<String, Object>) output).get("chunks");
+    private static List<RagChunk> chunksOf(Object output) {
+        return (List<RagChunk>) ((Map<String, Object>) output).get("chunks");
     }
 
     @SuppressWarnings("unchecked")
@@ -77,7 +70,7 @@ class RagNodeExecutorTest {
                 stateWithInput("userMessage", "练背"));
 
         assertThat(retriever.getLastQuery()).isEqualTo("用户想：练背");
-        List<RetrievedChunk> chunks = (List<RetrievedChunk>) output.get("chunks");
+        List<RagChunk> chunks = (List<RagChunk>) output.get("chunks");
         assertThat(chunks).hasSize(1);
         assertThat(chunks.get(0).getContent()).isEqualTo("背部渐进超负荷");
         assertThat(chunks.get(0).getScore()).isEqualTo(0.9);
@@ -115,7 +108,7 @@ class RagNodeExecutorTest {
     @Test
     void emptyResult_writesEmptyChunks() throws Exception {
         RagNodeExecutor empty = newExecutor(
-                new StubRetriever(List.of()), reranker, rerankProperties, retrievalProperties);
+                new StubRagRetriever(List.of()), reranker, baseProperties);
 
         Object output = empty.execute(ragNode(Map.of("query", "q")), new WorkflowState());
 
@@ -141,30 +134,30 @@ class RagNodeExecutorTest {
 
     @Test
     void rerankDisabled_doesNotCallReranker_andRecallsTopKOnly() throws Exception {
-        StubRetriever localRetriever = new StubRetriever(THREE_CHUNKS);
-        RagNodeExecutor exec = newExecutor(localRetriever, reranker, new RerankProperties(), retrievalProperties);
+        StubRagRetriever localRetriever = new StubRagRetriever(THREE_CHUNKS);
+        RagNodeExecutor exec = newExecutor(localRetriever, reranker, baseProperties);
 
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 3)),
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 3)),
                 new WorkflowState()));
 
         // 默认关闭：召回深度就是 topK，且完全没碰重排服务——保证基线行为与加重排前一致
         assertThat(localRetriever.getLastTopK()).isEqualTo(3);
         assertThat(reranker.getCallCount()).isZero();
-        assertThat(chunks).extracting(RetrievedChunk::getContent).containsExactly("向量第一名", "向量第二名", "向量第三名");
+        assertThat(chunks).extracting(RagChunk::getContent).containsExactly("向量第一名", "向量第二名", "向量第三名");
     }
 
     @Test
     void rerankEnabled_widensRecall_andReturnsRerankedTopK() throws Exception {
-        RerankProperties enabled = new RerankProperties();
-        enabled.setEnabled(true);
-        enabled.setRecallK(3);
+        RagProperties rerankOn = new RagProperties();
+        rerankOn.getRerank().setEnabled(true);
+        rerankOn.getRerank().setRecallK(3);
         // 重排把第三名顶到第一：验证返回用的是重排结果，而不是向量原序
-        StubReranker promoting = StubReranker.returning(List.of(
-                new RetrievedChunk("向量第三名", 0.99), new RetrievedChunk("向量第一名", 0.11)));
-        StubRetriever localRetriever = new StubRetriever(THREE_CHUNKS);
-        RagNodeExecutor exec = newExecutor(localRetriever, promoting, enabled, retrievalProperties);
+        StubRagReranker promoting = StubRagReranker.returning(List.of(
+                new RagChunk("向量第三名", 0.99), new RagChunk("向量第一名", 0.11)));
+        StubRagRetriever localRetriever = new StubRagRetriever(THREE_CHUNKS);
+        RagNodeExecutor exec = newExecutor(localRetriever, promoting, rerankOn);
 
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
                 new WorkflowState()));
 
         // 召回放大到 max(topK=2, recallK=3) = 3，重排只留 topK=2
@@ -172,30 +165,30 @@ class RagNodeExecutorTest {
         assertThat(promoting.getCallCount()).isEqualTo(1);
         assertThat(promoting.getLastTopN()).isEqualTo(2);
         assertThat(promoting.getLastCandidates()).hasSize(3);
-        assertThat(chunks).extracting(RetrievedChunk::getContent).containsExactly("向量第三名", "向量第一名");
+        assertThat(chunks).extracting(RagChunk::getContent).containsExactly("向量第三名", "向量第一名");
     }
 
     // ---------- T6.8 阈值 / 拒答 ----------
 
     @Test
     void minScore_dropsLowScoreChunks() throws Exception {
-        RetrievalProperties threshold = new RetrievalProperties();
+        RagProperties threshold = new RagProperties();
         threshold.getMinScore().setVector(0.85);
         RagNodeExecutor exec = newExecutor(
-                new StubRetriever(THREE_CHUNKS), reranker, new RerankProperties(), threshold);
+                new StubRagRetriever(THREE_CHUNKS), reranker, threshold);
 
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q")), new WorkflowState()));
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q")), new WorkflowState()));
 
         // 0.9 留下，0.8 / 0.7 被丢弃
-        assertThat(chunks).extracting(RetrievedChunk::getContent).containsExactly("向量第一名");
+        assertThat(chunks).extracting(RagChunk::getContent).containsExactly("向量第一名");
     }
 
     @Test
     void minScore_dropsEverything_hitIsFalse() throws Exception {
-        RetrievalProperties threshold = new RetrievalProperties();
+        RagProperties threshold = new RagProperties();
         threshold.getMinScore().setVector(0.95);
         RagNodeExecutor exec = newExecutor(
-                new StubRetriever(THREE_CHUNKS), reranker, new RerankProperties(), threshold);
+                new StubRagRetriever(THREE_CHUNKS), reranker, threshold);
 
         Map<String, Object> out = outputOf(exec.execute(ragNode(Map.of("query", "q")), new WorkflowState()));
 
@@ -208,9 +201,9 @@ class RagNodeExecutorTest {
     void minScore_zero_disablesFiltering() throws Exception {
         // 缺省 0.0 = 不启用：行为与加阈值之前完全一致（基线可复现）
         RagNodeExecutor exec = newExecutor(
-                new StubRetriever(THREE_CHUNKS), reranker, new RerankProperties(), new RetrievalProperties());
+                new StubRagRetriever(THREE_CHUNKS), reranker, new RagProperties());
 
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 3)),
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 3)),
                 new WorkflowState()));
 
         assertThat(chunks).hasSize(3);
@@ -218,21 +211,20 @@ class RagNodeExecutorTest {
 
     @Test
     void minScore_usesRerankedThresholdWhenRerankApplied() throws Exception {
-        RerankProperties enabled = new RerankProperties();
-        enabled.setEnabled(true);
         // 两套阈值量纲不同：向量侧设 0.95（会全杀），重排侧设 0.5（只留高分那条）
-        RetrievalProperties threshold = new RetrievalProperties();
-        threshold.getMinScore().setVector(0.95);
-        threshold.getMinScore().setReranked(0.5);
-        StubReranker reranked = StubReranker.returning(List.of(
-                new RetrievedChunk("向量第三名", 0.99), new RetrievedChunk("向量第一名", 0.11)));
-        RagNodeExecutor exec = newExecutor(new StubRetriever(THREE_CHUNKS), reranked, enabled, threshold);
+        RagProperties props = new RagProperties();
+        props.getRerank().setEnabled(true);
+        props.getMinScore().setVector(0.95);
+        props.getMinScore().setReranked(0.5);
+        StubRagReranker reranked = StubRagReranker.returning(List.of(
+                new RagChunk("向量第三名", 0.99), new RagChunk("向量第一名", 0.11)));
+        RagNodeExecutor exec = newExecutor(new StubRagRetriever(THREE_CHUNKS), reranked, props);
 
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
                 new WorkflowState()));
 
         // 生效的是重排侧阈值：0.99 过、0.11 被丢——若误用向量阈值 0.95 则两条都该被杀
-        assertThat(chunks).extracting(RetrievedChunk::getContent).containsExactly("向量第三名");
+        assertThat(chunks).extracting(RagChunk::getContent).containsExactly("向量第三名");
     }
 
     @SuppressWarnings("unchecked")
@@ -242,16 +234,16 @@ class RagNodeExecutorTest {
 
     @Test
     void rerankFails_degradesToVectorOrderTruncatedToTopK() throws Exception {
-        RerankProperties enabled = new RerankProperties();
-        enabled.setEnabled(true);
-        StubReranker failing = StubReranker.failing("服务不可用");
-        RagNodeExecutor exec = newExecutor(new StubRetriever(THREE_CHUNKS), failing, enabled, retrievalProperties);
+        RagProperties rerankOn = new RagProperties();
+        rerankOn.getRerank().setEnabled(true);
+        StubRagReranker failing = StubRagReranker.failing("服务不可用");
+        RagNodeExecutor exec = newExecutor(new StubRagRetriever(THREE_CHUNKS), failing, rerankOn);
 
         // 重排是增强不是必需：服务挂了应退回向量序，而不是让整个节点失败
-        List<RetrievedChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
+        List<RagChunk> chunks = chunksOf(exec.execute(ragNode(Map.of("query", "q", "topK", 2)),
                 new WorkflowState()));
 
         assertThat(failing.getCallCount()).isEqualTo(1);
-        assertThat(chunks).extracting(RetrievedChunk::getContent).containsExactly("向量第一名", "向量第二名");
+        assertThat(chunks).extracting(RagChunk::getContent).containsExactly("向量第一名", "向量第二名");
     }
 }

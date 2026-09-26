@@ -1,4 +1,6 @@
-package com.agentflow.ability.rag;
+package com.agentflow.ability.rag.retrieval;
+
+import com.agentflow.ability.rag.dto.RagChunk;
 
 import java.util.List;
 
@@ -9,7 +11,7 @@ import java.util.List;
  * 假存储都只动这一个 seam（复用 {@code LlmClient} 同款套路，见 QA 67）。
  * 参数直接对应 RAG 节点 config 的 {@code query / topK / collection}（NodeDefinition#getQuery 等）。
  */
-public interface Retriever {
+public interface RagRetriever {
 
     /**
      * 检索与 query 最相关的 topK 条内容，按相似度从高到低。
@@ -19,5 +21,5 @@ public interface Retriever {
      * @param collection 知识库名；null 表示默认库（不过滤）
      * @return 命中的内容片段，空列表表示无命中
      */
-    List<RetrievedChunk> retrieve(String query, int topK, String collection);
+    List<RagChunk> retrieve(String query, int topK, String collection);
 }

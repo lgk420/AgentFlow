@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.rag.KeywordEmbeddingModel;
-import com.agentflow.ability.rag.RetrievedChunk;
-import com.agentflow.ability.rag.VectorStoreRetriever;
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.VectorStoreRagRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -34,7 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * T6.4 灌库 API 全链路测试（Spring 上下文 + Testcontainers pgvector + 打桩嵌入 + MockMvc）。
  *
  * <p>覆盖：POST 灌库 → 200 + ingested；collection 名空 → 400；documents 空 → 400；
- * 灌完用 {@link VectorStoreRetriever} bean 检索验证 collection 元数据标签生效（检索闭环）。
+ * 灌完用 {@link VectorStoreRagRetriever} bean 检索验证 collection 元数据标签生效（检索闭环）。
  *
  * <p>打桩嵌入覆盖 Ollama：{@code @TestConfiguration} 的 EmbeddingModel bean 在自动配置之前注册，
  * OllamaEmbeddingAutoConfiguration 的 @ConditionalOnMissingBean 回退 → 无 Ollama 依赖、确定性可断言。
@@ -68,7 +68,7 @@ class RagApiTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private VectorStoreRetriever retriever;
+    private VectorStoreRagRetriever retriever;
 
     @Test
     void ingest_tagsCollectionAndReturnsCount() throws Exception {
@@ -83,8 +83,8 @@ class RagApiTest {
                 .andExpect(jsonPath("$.ingested").value(2));
 
         // 灌完用真实 VectorStoreRetriever 检索：query 含"背" → 召回背部文档（collection=kb 过滤生效）
-        List<RetrievedChunk> chunks = retriever.retrieve("练背", 5, "kb");
-        assertThat(chunks).extracting(RetrievedChunk::getContent).contains("背部训练：坐姿钢线划船");
+        List<RagChunk> chunks = retriever.retrieve("练背", 5, "kb");
+        assertThat(chunks).extracting(RagChunk::getContent).contains("背部训练：坐姿钢线划船");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.agentflow.engine.scheduler;
 
+import com.agentflow.ability.rag.StubRagReranker;
 import com.agentflow.engine.node.StubLlmNodeExecutor;
 
 import com.agentflow.engine.node.StubToolNodeExecutor;
@@ -22,16 +23,12 @@ import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.definition.WorkflowDefinition;
-import com.agentflow.engine.scheduler.ConditionEvaluator;
-import com.agentflow.engine.scheduler.LlmRouter;
 import com.agentflow.engine.model.state.NodeStatus;
 import com.agentflow.engine.model.state.RunStatus;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.rag.RerankProperties;
-import com.agentflow.ability.rag.RetrievalProperties;
-import com.agentflow.ability.rag.RetrievedChunk;
-import com.agentflow.ability.rag.StubReranker;
-import com.agentflow.ability.rag.StubRetriever;
+import com.agentflow.ability.rag.RagProperties;
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.StubRagRetriever;
 import com.agentflow.runtime.checkpoint.InMemoryCheckpointStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -107,14 +104,14 @@ class WorkflowExecutorTest {
     @Test
     void ragNode_writesChunksToState_endAggregates() throws Exception {
         // T6.3 集成：RAG 节点 query 模板解析 → StubRetriever → {chunks} 写 state，END 聚合（检索分支产出可用 chunks）
-        StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("背部渐进超负荷", 0.9)));
+        StubRagRetriever retriever = new StubRagRetriever(List.of(new RagChunk("背部渐进超负荷", 0.9)));
         WorkflowExecutor ragExecutor = new WorkflowExecutor(
                 new InMemoryCheckpointStore(),
                 new ParallelDispatcher(4),
                 new ConditionEvaluator(),
                 List.of(new StartNodeExecutor(), new StubToolNodeExecutor(),
-                        new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
-                                new RetrievalProperties(), new TemplateResolver(), TestTemplateContext.withoutMemory())), null);
+                        new RagNodeExecutor(retriever, StubRagReranker.passthrough(), new RagProperties(),
+                                new TemplateResolver(), TestTemplateContext.withoutMemory())), null);
 
         WorkflowState state = ragExecutor.execute("run-rag", parser.parse("""
                 { "id": "rag-wf", "name": "rag",
@@ -135,7 +132,7 @@ class WorkflowExecutorTest {
         Object kbOut = state.getNodeOutputs().get("kb").getOutput();
         assertThat(kbOut).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
-        List<RetrievedChunk> chunks = (List<RetrievedChunk>) ((Map<String, Object>) kbOut).get("chunks");
+        List<RagChunk> chunks = (List<RagChunk>) ((Map<String, Object>) kbOut).get("chunks");
         assertThat(chunks).hasSize(1);
         assertThat(chunks.get(0).getContent()).isEqualTo("背部渐进超负荷");
         // END 聚合直接前驱 kb 的输出
@@ -147,22 +144,22 @@ class WorkflowExecutorTest {
      *
      * <p>这是「阈值」能真正生效的最后一环——没有它，{@code hit} 字段只是躺在输出里没人用。
      */
-    private WorkflowExecutor refusalExecutor(StubRetriever retriever, double minScore) {
-        RetrievalProperties threshold = new RetrievalProperties();
+    private WorkflowExecutor refusalExecutor(StubRagRetriever retriever, double minScore) {
+        RagProperties threshold = new RagProperties();
         threshold.getMinScore().setVector(minScore);
         return new WorkflowExecutor(
                 new InMemoryCheckpointStore(),
                 new ParallelDispatcher(4),
                 new ConditionEvaluator(),
                 List.of(new StartNodeExecutor(), new StubLlmNodeExecutor(),
-                        new RagNodeExecutor(retriever, StubReranker.passthrough(), new RerankProperties(),
-                                threshold, new TemplateResolver(), TestTemplateContext.withoutMemory())),
+                        new RagNodeExecutor(retriever, StubRagReranker.passthrough(), threshold,
+                                new TemplateResolver(), TestTemplateContext.withoutMemory())),
                 null);
     }
 
     @Test
     void refusal_hitTrue_routesToAnswer() throws Exception {
-        StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("背部训练要点", 0.9)));
+        StubRagRetriever retriever = new StubRagRetriever(List.of(new RagChunk("背部训练要点", 0.9)));
         WorkflowExecutor exec = refusalExecutor(retriever, 0.5);
 
         WorkflowState state = exec.execute("run-refusal-hit",
@@ -178,7 +175,7 @@ class WorkflowExecutorTest {
     @Test
     void refusal_allBelowThreshold_routesToFallback() throws Exception {
         // 检索召回了内容，但分数低于阈值 → hit=false → 应当拒答，而不是拿着低分资料硬答
-        StubRetriever retriever = new StubRetriever(List.of(new RetrievedChunk("无关内容", 0.3)));
+        StubRagRetriever retriever = new StubRagRetriever(List.of(new RagChunk("无关内容", 0.3)));
         WorkflowExecutor exec = refusalExecutor(retriever, 0.5);
 
         WorkflowState state = exec.execute("run-refusal-miss",
@@ -193,7 +190,7 @@ class WorkflowExecutorTest {
     @Test
     void refusal_noResultAtAll_routesToFallback() throws Exception {
         // 检索一条都没召回（知识库确实没有）——同样走兜底
-        WorkflowExecutor exec = refusalExecutor(new StubRetriever(List.of()), 0.5);
+        WorkflowExecutor exec = refusalExecutor(new StubRagRetriever(List.of()), 0.5);
 
         WorkflowState state = exec.execute("run-refusal-empty",
                 fixture("/testdata/workflows/rag-refusal/refusal.json"), Map.of("userMessage", "肌酸有必要吃吗"));

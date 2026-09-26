@@ -14,9 +14,9 @@ import java.util.stream.Collectors;
 import com.agentflow.api.IngestDocument;
 import com.agentflow.api.IngestRequest;
 import com.agentflow.api.RagApi;
-import com.agentflow.ability.rag.Reranker;
-import com.agentflow.ability.rag.RetrievedChunk;
-import com.agentflow.ability.rag.Retriever;
+import com.agentflow.ability.rag.rerank.RagReranker;
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.RagRetriever;
 import com.agentflow.ability.rag.eval.RetrievalMetrics.GroupSummary;
 import com.agentflow.ability.rag.eval.RetrievalMetrics.Outcome;
 import com.agentflow.ability.rag.eval.RetrievalMetrics.Summary;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * RAG 检索质量评测台（T6.6 基线，T6.7 加重排对照，T6.8 加阈值扫描）——「评测」基础设施，不是常规单测。
  *
- * <p><b>只测检索层</b>：直接调 {@link Retriever}（与 {@link Reranker}），不走工作流、不调 LLM。
+ * <p><b>只测检索层</b>：直接调 {@link RagRetriever}（与 {@link RagReranker}），不走工作流、不调 LLM。
  * 这样一次全量 50 条几秒跑完，可以反复跑多组配置做对照；且分数掉了能确定是检索的锅，
  * 不会是编排或生成的锅。生成质量评测（答案准不准、有没有编）需要 LLM-as-Judge，属另一块，本类不做。
  *
@@ -112,10 +112,10 @@ class RagEvalTest {
     private RagApi ragApi;
 
     @Autowired
-    private Retriever retriever;
+    private RagRetriever ragRetriever;
 
     @Autowired
-    private Reranker reranker;
+    private RagReranker ragReranker;
 
     /** 本次灌入的语料块数，供报告头部展示。 */
     private int ingestedCount;
@@ -168,7 +168,7 @@ class RagEvalTest {
     private boolean probeRerank() {
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                reranker.rerank("探活", List.of(new RetrievedChunk("探活文本", 0.0)), 1);
+                ragReranker.rerank("探活", List.of(new RagChunk("探活文本", 0.0)), 1);
                 return true;
             } catch (RuntimeException e) {
                 System.out.printf("重排探活第 %d/2 次失败：%s%n", attempt, e.getMessage());
@@ -211,23 +211,23 @@ class RagEvalTest {
         List<Outcome> outcomes = new ArrayList<>();
         for (GoldenSet.Case testCase : goldenSet.cases()) {
             long start = System.nanoTime();
-            List<RetrievedChunk> chunks = retriever.retrieve(testCase.question(), TOP_K, COLLECTION);
+            List<RagChunk> chunks = ragRetriever.retrieve(testCase.question(), TOP_K, COLLECTION);
             if (config.rerank()) {
                 // 不走 RagNodeExecutor：评测要测检索质量而非 DAG 编排，
                 // 且绕过执行器的降级——重排挂了必须让测试失败，不能被静默记成"没提升"。
-                chunks = reranker.rerank(testCase.question(), chunks, TOP_K);
+                chunks = ragReranker.rerank(testCase.question(), chunks, TOP_K);
             }
             long millis = (System.nanoTime() - start) / 1_000_000;
             outcomes.add(new Outcome(testCase,
                     chunks.stream().map(RagEvalTest::labelOf).toList(),
-                    chunks.stream().map(RetrievedChunk::getScore).toList(),
+                    chunks.stream().map(RagChunk::getScore).toList(),
                     millis));
         }
         return outcomes;
     }
 
     /** chunk 的稳定标识：{@code 文件名#动作名}，与评测集 expect 同口径。 */
-    private static String labelOf(RetrievedChunk chunk) {
+    private static String labelOf(RagChunk chunk) {
         Map<String, Object> metadata = chunk.getMetadata();
         return metadata.get("source") + "#" + metadata.get("label");
     }

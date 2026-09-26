@@ -3,6 +3,8 @@ package com.agentflow.ability.rag;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.VectorStoreRagRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -17,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>验证包装逻辑：query/topK/collection 正确透传成 SearchRequest、Document → RetrievedChunk 映射。
  * 真实 pgvector + Ollama 嵌入的端到端验收留 T6.2（同 LlmClientTest 走 Stub 的套路）。
  */
-class VectorStoreRetrieverTest {
+class VectorStoreRagRetrieverTest {
 
     /** 记录收到的 SearchRequest、返回固定结果的假 VectorStore。 */
     static class FakeVectorStore implements VectorStore {
@@ -58,9 +60,9 @@ class VectorStoreRetrieverTest {
     @Test
     void retrieve_passesQueryAndTopK_withoutCollection() {
         FakeVectorStore store = new FakeVectorStore(List.of(doc("背部训练原则")));
-        VectorStoreRetriever retriever = new VectorStoreRetriever(store);
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(store);
 
-        List<RetrievedChunk> chunks = retriever.retrieve("如何练背", 5, null);
+        List<RagChunk> chunks = retriever.retrieve("如何练背", 5, null);
 
         assertThat(store.received).hasSize(1);
         SearchRequest request = store.received.get(0);
@@ -74,7 +76,7 @@ class VectorStoreRetrieverTest {
     @Test
     void retrieve_withCollection_setsFilterExpression() {
         FakeVectorStore store = new FakeVectorStore(List.of());
-        VectorStoreRetriever retriever = new VectorStoreRetriever(store);
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(store);
 
         retriever.retrieve("练背", 3, "kb");
 
@@ -87,7 +89,7 @@ class VectorStoreRetrieverTest {
     @Test
     void retrieve_blankCollection_doesNotFilter() {
         FakeVectorStore store = new FakeVectorStore(List.of());
-        VectorStoreRetriever retriever = new VectorStoreRetriever(store);
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(store);
 
         retriever.retrieve("练背", 3, "  ");
 
@@ -99,9 +101,9 @@ class VectorStoreRetrieverTest {
         List<Document> docs = List.of(
                 Document.builder().text("背部渐进超负荷").score(0.91).build(),
                 Document.builder().text("腿部训练").score(0.72).build());
-        VectorStoreRetriever retriever = new VectorStoreRetriever(new FakeVectorStore(docs));
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(new FakeVectorStore(docs));
 
-        List<RetrievedChunk> chunks = retriever.retrieve("训练", 2, null);
+        List<RagChunk> chunks = retriever.retrieve("训练", 2, null);
 
         assertThat(chunks).hasSize(2);
         assertThat(chunks.get(0).getContent()).isEqualTo("背部渐进超负荷");
@@ -112,16 +114,16 @@ class VectorStoreRetrieverTest {
 
     @Test
     void retrieve_nullScore_defaultsToZero() {
-        VectorStoreRetriever retriever = new VectorStoreRetriever(new FakeVectorStore(List.of(doc("无分数文档"))));
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(new FakeVectorStore(List.of(doc("无分数文档"))));
 
-        List<RetrievedChunk> chunks = retriever.retrieve("x", 1, null);
+        List<RagChunk> chunks = retriever.retrieve("x", 1, null);
 
         assertThat(chunks.get(0).getScore()).isZero();
     }
 
     @Test
     void retrieve_emptyResult_returnsEmptyList() {
-        VectorStoreRetriever retriever = new VectorStoreRetriever(new FakeVectorStore(List.of()));
+        VectorStoreRagRetriever retriever = new VectorStoreRagRetriever(new FakeVectorStore(List.of()));
 
         assertThat(retriever.retrieve("x", 1, null)).isEmpty();
     }

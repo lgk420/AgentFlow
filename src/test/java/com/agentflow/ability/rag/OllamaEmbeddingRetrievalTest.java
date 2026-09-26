@@ -7,6 +7,8 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.VectorStoreRagRetriever;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
@@ -22,7 +24,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * T6.2 真实链路验收——真实 bge-m3 嵌入 + 真实 pgvector（QA 67 的"真实那层"，手工验收）。
  *
- * <p>与 {@link VectorStoreRetrieverIntegrationTest}（打桩嵌入、Testcontainers）互补：本用例连
+ * <p>与 {@link VectorStoreRagRetrieverIntegrationTest}（打桩嵌入、Testcontainers）互补：本用例连
  * 本机 compose 的 postgres（localhost:5432）和 Ollama（localhost:11434），验证嵌入模型真实产出
  * 向量 → pgvector 真实 SQL 检索 → 语义召回。Ollama 不在线时优雅跳过（assumeTrue）。
  *
@@ -53,9 +55,9 @@ class OllamaEmbeddingRetrievalTest {
                 Document.builder().text("腿部训练：杠铃深蹲 每组 8 次").metadata("collection", "ittest").build(),
                 Document.builder().text("渐进超负荷：每周增加 5% 训练重量").metadata("collection", "ittest").build()));
 
-        List<RetrievedChunk> chunks = new VectorStoreRetriever(store).retrieve("怎么练背", 3, "ittest");
+        List<RagChunk> chunks = new VectorStoreRagRetriever(store).retrieve("怎么练背", 3, "ittest");
 
-        assertThat(chunks).extracting(RetrievedChunk::getContent).contains("背部训练：坐姿钢线划船 每组 16 次");
+        assertThat(chunks).extracting(RagChunk::getContent).contains("背部训练：坐姿钢线划船 每组 16 次");
         assertThat(chunks.get(0).getScore()).isGreaterThan(0);
     }
 

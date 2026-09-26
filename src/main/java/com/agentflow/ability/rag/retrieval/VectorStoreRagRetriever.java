@@ -1,10 +1,10 @@
-package com.agentflow.ability.rag;
+package com.agentflow.ability.rag.retrieval;
 
 import java.util.List;
 
+import com.agentflow.ability.rag.dto.RagChunk;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Component;
 
@@ -20,33 +20,25 @@ import org.springframework.stereotype.Component;
  * 看不到自动配置注册的 bean 会静默失效（记录于任务拆解 T6.1 踩坑）。
  */
 @Component
-public class VectorStoreRetriever implements Retriever {
+public class VectorStoreRagRetriever implements RagRetriever {
 
     private final VectorStore vectorStore;
 
-    public VectorStoreRetriever(VectorStore vectorStore) {
+    public VectorStoreRagRetriever(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
     }
 
     @Override
-    public List<RetrievedChunk> retrieve(String query, int topK, String collection) {
+    public List<RagChunk> retrieve(String query, int topK, String collection) {
         SearchRequest.Builder builder = SearchRequest.builder().query(query).topK(topK);
         if (collection != null && !collection.isBlank()) {
-            builder.filterExpression(collectionFilter(collection));
+            builder.filterExpression(new FilterExpressionBuilder().eq("collection", collection).build());
         }
         return vectorStore.similaritySearch(builder.build()).stream()
-                .map(doc -> new RetrievedChunk(
-                        doc.getText(),
-                        doc.getScore() == null ? 0.0 : doc.getScore(),
-                        doc.getMetadata()))
+                .map(document -> new RagChunk(
+                        document.getText(),
+                        document.getScore() == null ? 0.0 : document.getScore(),
+                        document.getMetadata()))
                 .toList();
-    }
-
-    /**
-     * collection → 元数据过滤表达式（metadata.collection == collection）。确切 SQL 翻译留给 T6.2 pgvector，
-     * 此处只把 DSL 的 collection 约束落到检索请求的 filter 上。
-     */
-    private static Filter.Expression collectionFilter(String collection) {
-        return new FilterExpressionBuilder().eq("collection", collection).build();
     }
 }

@@ -1,4 +1,4 @@
-package com.agentflow.ability.rag;
+package com.agentflow.ability.rag.dto;
 
 import java.util.Map;
 
@@ -11,7 +11,7 @@ import java.util.Map;
  * 这里存整个 map 而不拆成 source/label 字段：RAG 节点对具体知识库的 frontmatter 结构一无所知，
  * 换一个知识库标签就全变了。
  */
-public class RetrievedChunk {
+public class RagChunk {
 
     /**
      * 文档正文。
@@ -28,14 +28,14 @@ public class RetrievedChunk {
      */
     private Map<String, Object> metadata = Map.of();
 
-    public RetrievedChunk() {
+    public RagChunk() {
     }
 
-    public RetrievedChunk(String content, double score) {
+    public RagChunk(String content, double score) {
         this(content, score, Map.of());
     }
 
-    public RetrievedChunk(String content, double score, Map<String, Object> metadata) {
+    public RagChunk(String content, double score, Map<String, Object> metadata) {
         this.content = content;
         this.score = score;
         this.metadata = metadata == null ? Map.of() : metadata;

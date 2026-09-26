@@ -1,19 +1,17 @@
 package com.agentflow.engine.node;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.ability.rag.rerank.RagReranker;
 import com.agentflow.engine.template.TemplateContextFactory;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.rag.RerankProperties;
-import com.agentflow.ability.rag.Reranker;
-import com.agentflow.ability.rag.RetrievalProperties;
-import com.agentflow.ability.rag.Retriever;
-import com.agentflow.ability.rag.RetrievedChunk;
+import com.agentflow.ability.rag.RagProperties;
+import com.agentflow.ability.rag.retrieval.RagRetriever;
+import com.agentflow.ability.rag.dto.RagChunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,7 +19,7 @@ import org.springframework.stereotype.Component;
 /**
  * RAG 节点执行器（T6.3 检索，T6.7 重排，T6.8 阈值/拒答）——检索向量库，产出上下文 chunks 写 state。
  *
- * <p>流程：query 模板解析 → <b>召回</b>（{@link Retriever}）→ 可选<b>重排</b>（{@link Reranker}）
+ * <p>流程：query 模板解析 → <b>召回</b>（{@link RagRetriever}）→ 可选<b>重排</b>（{@link RagReranker}）
  * → <b>相似度阈值过滤</b> → 返回 {@code {chunks: [...], hit: 布尔}}。
  *
  * <p><b>两阶段与召回放大（T6.7）</b>：向量检索是 bi-encoder，快但"排不准"；重排是 cross-encoder，
@@ -31,7 +29,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>命中判定（T6.8）</b>：过滤掉低于阈值的块后，若一条不剩则 {@code hit=false}。
  * 下游 DSL 用 CONDITIONAL 边判 {@code {{nodes.x.output.hit}} == false} 走拒答兜底分支，
- * <b>而不是让 LLM 拿着空上下文硬编</b>。阈值分向量/重排两套（量纲不同，见 {@link RetrievalProperties}）。
+ * <b>而不是让 LLM 拿着空上下文硬编</b>。阈值分向量/重排两套（量纲不同，见 {@link RagProperties}）。
  *
  * <p>query 必填由执行器自守（GraphValidator 只校验白名单不校验必填，QA 27——同
  * ToolNodeExecutor 校验 tool）；检索空结果返回空 chunks + hit=false 不失败。
@@ -44,20 +42,18 @@ public class RagNodeExecutor implements NodeExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(RagNodeExecutor.class);
 
-    private final Retriever retriever;
-    private final Reranker reranker;
-    private final RerankProperties rerankProperties;
-    private final RetrievalProperties retrievalProperties;
+    private final RagRetriever ragRetriever;
+    private final RagReranker ragReranker;
+    private final RagProperties ragProperties;
     private final TemplateResolver templateResolver;
     private final TemplateContextFactory templateContextFactory;
 
-    public RagNodeExecutor(Retriever retriever, Reranker reranker, RerankProperties rerankProperties,
-                           RetrievalProperties retrievalProperties, TemplateResolver templateResolver,
+    public RagNodeExecutor(RagRetriever ragRetriever, RagReranker ragReranker, RagProperties ragProperties,
+                           TemplateResolver templateResolver,
                            TemplateContextFactory templateContextFactory) {
-        this.retriever = retriever;
-        this.reranker = reranker;
-        this.rerankProperties = rerankProperties;
-        this.retrievalProperties = retrievalProperties;
+        this.ragRetriever = ragRetriever;
+        this.ragReranker = ragReranker;
+        this.ragProperties = ragProperties;
         this.templateResolver = templateResolver;
         this.templateContextFactory = templateContextFactory;
     }
@@ -76,14 +72,14 @@ public class RagNodeExecutor implements NodeExecutor {
         String resolved = templateResolver.resolve(query, templateContextFactory.contextFor(state));
 
         int topK = node.getTopK();
-        boolean rerankEnabled = rerankProperties.isEnabled();
-        int recallK = rerankEnabled ? Math.max(topK, rerankProperties.getRecallK()) : topK;
+        boolean rerankEnabled = ragProperties.getRerank().isEnabled();
+        int recallK = rerankEnabled ? Math.max(topK, ragProperties.getRerank().getRecallK()) : topK;
 
-        List<RetrievedChunk> chunks = retriever.retrieve(resolved, recallK, node.getCollection());
+        List<RagChunk> chunks = ragRetriever.retrieve(resolved, recallK, node.getCollection());
 
         boolean reranked = false;
         if (rerankEnabled && chunks.size() > 1) {
-            List<RetrievedChunk> rerankedChunks = rerankOrNull(node.getId(), resolved, chunks, topK);
+            List<RagChunk> rerankedChunks = rerankOrNull(node.getId(), resolved, chunks, topK);
             if (rerankedChunks == null) {
                 chunks = truncate(chunks, topK);
             } else {
@@ -92,7 +88,7 @@ public class RagNodeExecutor implements NodeExecutor {
             }
         }
 
-        List<RetrievedChunk> hits = filterByMinScore(chunks, reranked);
+        List<RagChunk> hits = filterByMinScore(chunks, reranked);
         return Map.of("chunks", hits, "hit", !hits.isEmpty());
     }
 
@@ -102,19 +98,19 @@ public class RagNodeExecutor implements NodeExecutor {
      * <p><b>为什么降级而不是让节点失败</b>：重排是检索质量的<b>增强</b>，不是工作流的必需环节。
      * 重排服务不可用时退回向量序，下游照常拿到一份可用的上下文，比整个节点 FAILED 更合理。
      *
-     * <p>注意评测台<b>不走这条路径</b>——它直接调 {@link Reranker}，异常直接冒泡让测试失败。
+     * <p>注意评测台<b>不走这条路径</b>——它直接调 {@link RagReranker}，异常直接冒泡让测试失败。
      * 否则"重排服务挂了"会被静默记成"重排没有提升"，那个数字就废了。
      */
-    private List<RetrievedChunk> rerankOrNull(String nodeId, String query, List<RetrievedChunk> chunks, int topK) {
+    private List<RagChunk> rerankOrNull(String nodeId, String query, List<RagChunk> chunks, int topK) {
         try {
-            return reranker.rerank(query, chunks, topK);
+            return ragReranker.rerank(query, chunks, topK);
         } catch (RuntimeException e) {
             log.warn("RAG 节点 {} 重排失败，降级为向量原序：{}", nodeId, e.getMessage());
             return null;
         }
     }
 
-    private static List<RetrievedChunk> truncate(List<RetrievedChunk> chunks, int topK) {
+    private static List<RagChunk> truncate(List<RagChunk> chunks, int topK) {
         return chunks.size() > topK ? chunks.subList(0, topK) : chunks;
     }
 
@@ -123,14 +119,14 @@ public class RagNodeExecutor implements NodeExecutor {
      *
      * <p>用哪个阈值取决于分数的来源：<b>重排分与向量分不是一个量纲</b>
      * （重排后 score 是 cross-encoder 相关性分，未重排时是向量余弦相似度），
-     * 同一个数不可能同时适用两条路径——详见 {@link RetrievalProperties}。
+     * 同一个数不可能同时适用两条路径——详见 {@link RagProperties}。
      *
      * <p>阈值为 0 表示不启用，此时原样返回，行为与加阈值之前完全一致。
      */
-    private List<RetrievedChunk> filterByMinScore(List<RetrievedChunk> chunks, boolean reranked) {
+    private List<RagChunk> filterByMinScore(List<RagChunk> chunks, boolean reranked) {
         double minScore = reranked
-                ? retrievalProperties.getMinScore().getReranked()
-                : retrievalProperties.getMinScore().getVector();
+                ? ragProperties.getMinScore().getReranked()
+                : ragProperties.getMinScore().getVector();
         if (minScore <= 0.0) {
             return chunks;
         }
