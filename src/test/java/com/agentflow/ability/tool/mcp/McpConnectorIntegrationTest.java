@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.agentflow.ability.tool.ToolRegistry;
-import com.agentflow.ability.tool.ToolSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.AfterEach;
@@ -25,7 +24,7 @@ class McpConnectorIntegrationTest {
     @BeforeEach
     void setUp() {
         connector = McpConnector.connect(demoServerConfig());
-        registry = new ToolRegistry(new ToolSchemaValidator(new ObjectMapper()));
+        registry = new ToolRegistry(new ObjectMapper());
         McpToolAdapter adapter = new McpToolAdapter(connector, new ObjectMapper());
         for (McpSchema.Tool tool : connector.listTools()) {
             registry.register(adapter.adapt(tool));

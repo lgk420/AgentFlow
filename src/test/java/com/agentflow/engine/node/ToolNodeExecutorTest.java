@@ -1,9 +1,5 @@
 package com.agentflow.engine.node;
 
-import com.agentflow.engine.node.ToolNodeExecutor;
-
-import com.agentflow.engine.node.WorkflowExecutionException;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,8 +11,9 @@ import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.NodeOutput;
 import com.agentflow.engine.model.state.NodeStatus;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,8 +33,8 @@ class ToolNodeExecutorTest {
 
     @BeforeEach
     void setUp() {
-        registry = new ToolRegistry(null); // 跳过 schema 校验，聚焦绑定
-        registry.register(new ToolDescriptor("echo", "回显参数", null, args -> args));
+        registry = new ToolRegistry(new ObjectMapper()); // 跳过 schema 校验，聚焦绑定
+        registry.register(new ToolDefinition("echo", "回显参数", null, args -> args));
         executor = new ToolNodeExecutor(registry, new TemplateResolver(), TestTemplateContext.withoutMemory());
     }
 

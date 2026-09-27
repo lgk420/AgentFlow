@@ -1,10 +1,11 @@
-package com.agentflow.ability.tool.builtin;
+package com.agentflow.ability.tool.scenarios;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.agentflow.ability.tool.scenarios.fitness.FitnessTools;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
@@ -34,8 +35,7 @@ class TrainingHistoryQueryToolTest {
     /** 固定"今天"=2026-08-13：近4周 cutoff=20260716、近2周 cutoff=20260730。 */
     private static final LocalDate TODAY = LocalDate.of(2026, 8, 13);
 
-    private TrainingLogStoreTool store;
-    private TrainingHistoryQueryTool query;
+    private FitnessTools tools;
 
     @BeforeEach
     void setUp() {
@@ -48,8 +48,7 @@ class TrainingHistoryQueryToolTest {
             connection.flushDb();
             return null;
         });
-        store = new TrainingLogStoreTool(template);
-        query = new TrainingHistoryQueryTool(template);
+        tools = new FitnessTools(template);
     }
 
     private static Map<String, Object> log(String date, String muscleGroup) {
@@ -68,11 +67,11 @@ class TrainingHistoryQueryToolTest {
 
     @Test
     void windows_filteredByWeeks_andSortedDesc() {
-        store.invoke(log("20260720", "腿"), "u"); // 24 天前：近4周内、近2周外
-        store.invoke(log("20260810", "背"), "u"); // 3 天前：近2周内
-        store.invoke(log("20260812", "胸"), "u"); // 1 天前
+        tools.storeLog(log("20260720", "腿"), "u"); // 24 天前：近4周内、近2周外
+        tools.storeLog(log("20260810", "背"), "u"); // 3 天前：近2周内
+        tools.storeLog(log("20260812", "胸"), "u"); // 1 天前
 
-        Map<String, Object> h = query.queryForUser("u", "腿", 4, TODAY);
+        Map<String, Object> h = tools.queryForUser("u", "腿", 4, TODAY);
 
         assertThat(h.get("recentActions")).asList().hasSize(3);
         assertThat(h.get("accessoryHistory")).asList().hasSize(2);
@@ -86,7 +85,7 @@ class TrainingHistoryQueryToolTest {
 
     @Test
     void emptyHistory_returnsEmptyLists() {
-        Map<String, Object> h = query.queryForUser("u", "腿", 4, TODAY);
+        Map<String, Object> h = tools.queryForUser("u", "腿", 4, TODAY);
         assertThat(h.get("recentActions")).asList().isEmpty();
         assertThat(h.get("accessoryHistory")).asList().isEmpty();
     }
@@ -108,9 +107,9 @@ class TrainingHistoryQueryToolTest {
                                 Map.of("weight", 20, "reps", 10),
                                 Map.of("weight", 20, "reps", 10),
                                 Map.of("weight", 20, "reps", 10)))));
-        store.invoke(log, "u");
+        tools.storeLog(log, "u");
 
-        Map<String, Object> h = query.queryForUser("u", "背", 4, TODAY);
+        Map<String, Object> h = tools.queryForUser("u", "背", 4, TODAY);
         @SuppressWarnings("unchecked")
         Map<String, Object> day = (Map<String, Object>) ((List<?>) h.get("recentActions")).get(0);
 

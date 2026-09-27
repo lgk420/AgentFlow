@@ -1,6 +1,5 @@
 package com.agentflow.ability.tool;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -9,27 +8,34 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.agentflow.ability.tool.dto.ToolDefinition;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * T5.1 工具注册中心验收测试。
+ * T5.1 / T5.3 工具注册中心验收测试。
  *
- * <p>验收依据（任务拆解 T5.1）：注册→查询→调用闭环；重名注册报错；不存在查询/调用明确报错。
+ * <p>验收依据（任务拆解 T5.1 / T5.3）：注册→查询→调用闭环；重名注册报错；不存在查询/调用明确报错；
+ * 有 parameters 的工具在调用前<b>先校验入参</b>（缺必填 / 类型错 / 枚举不匹配 → 明确报错）。
  */
 class ToolRegistryTest {
 
-    private final ToolRegistry registry = new ToolRegistry(null); // 本测试不涉及入参校验（T5.3 另有测试）
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final ToolRegistry registry = new ToolRegistry(mapper);
 
-    private static ToolDescriptor tool(String name, ToolInvoker invoker) {
-        return new ToolDescriptor(name, "工具 " + name, null, invoker);
+    private static ToolDefinition tool(String name, ToolInvoker invoker) {
+        return new ToolDefinition(name, "工具 " + name, null, invoker);
     }
 
     @Test
     void registerThenGet_returnsSameDescriptor() {
-        ToolDescriptor d = tool("calc", args -> 7);
+        ToolDefinition d = tool("calc", args -> 7);
         registry.register(d);
 
         assertThat(registry.get("calc")).isSameAs(d);
@@ -64,7 +70,7 @@ class ToolRegistryTest {
 
     @Test
     void registerDuplicateName_throws() {
-        ToolDescriptor first = tool("calc", args -> 1);
+        ToolDefinition first = tool("calc", args -> 1);
         registry.register(first);
 
         assertThatThrownBy(() -> registry.register(tool("calc", args -> 2)))
@@ -88,7 +94,7 @@ class ToolRegistryTest {
         registry.register(tool("b", args -> 2));
         registry.register(tool("c", args -> 3));
 
-        Set<String> names = registry.getAll().stream().map(ToolDescriptor::getName).collect(java.util.stream.Collectors.toSet());
+        Set<String> names = registry.getAll().stream().map(ToolDefinition::getName).collect(java.util.stream.Collectors.toSet());
         assertThat(names).containsExactlyInAnyOrder("a", "b", "c");
     }
 
@@ -143,7 +149,89 @@ class ToolRegistryTest {
 
     @Test
     void descriptorDefaultTimeout() {
-        ToolDescriptor d = tool("x", args -> 1);
-        assertThat(d.getTimeoutMs()).isEqualTo(ToolDescriptor.DEFAULT_TIMEOUT_MS);
+        ToolDefinition d = tool("x", args -> 1);
+        assertThat(d.getTimeoutMs()).isEqualTo(ToolDefinition.DEFAULT_TIMEOUT_MS);
+    }
+
+    // ═══════════════════ T5.3 入参 JSON Schema 校验 ═══════════════════
+
+    /**
+     * 注册一个带 schema 的工具。校验是 {@code invoke} 的一步，所以测试都从 invoke 走，
+     * 不穿透到私有方法。
+     */
+    private void registerWithSchema(String name, ObjectNode schema) {
+        registry.register(new ToolDefinition(name, "工具 " + name, schema, args -> "ok"));
+    }
+
+    private ObjectNode schemaWithIntProp(String propName, boolean required) {
+        ObjectNode schema = mapper.createObjectNode();
+        schema.put("type", "object");
+        schema.putObject("properties").putObject(propName).put("type", "integer");
+        if (required) {
+            schema.putArray("required").add(propName);
+        }
+        return schema;
+    }
+
+    @Test
+    void missingRequired_throws() {
+        registerWithSchema("add", schemaWithIntProp("a", true));
+
+        assertThatThrownBy(() -> registry.invoke("add", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("add")
+                .hasMessageContaining("入参校验失败");
+    }
+
+    @Test
+    void typeMismatch_throws() {
+        registerWithSchema("add", schemaWithIntProp("a", false));
+
+        assertThatThrownBy(() -> registry.invoke("add", Map.of("a", "not-a-number")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("入参校验失败");
+    }
+
+    @Test
+    void enumMismatch_throws() {
+        ObjectNode schema = mapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode level = schema.putObject("properties").putObject("level");
+        level.put("type", "string");
+        ArrayNode enumVals = level.putArray("enum");
+        enumVals.add("LOW").add("HIGH");
+        registerWithSchema("level", schema);
+
+        assertThatThrownBy(() -> registry.invoke("level", Map.of("level", "MID")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("入参校验失败");
+    }
+
+    @Test
+    void nullSchema_noop() {
+        registerWithSchema("t", null);
+
+        assertThatCode(() -> registry.invoke("t", Map.of("x", 1))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nullArgs_treatedAsEmpty() {
+        registerWithSchema("add", schemaWithIntProp("a", true));
+
+        assertThatThrownBy(() -> registry.invoke("add", null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * 校验通过后，工具真的被执行了（不只是"没拦住"）。
+     */
+    @Test
+    void registryInvoke_validatesBeforeExecuting() {
+        registry.register(new ToolDefinition("add", "加法", schemaWithIntProp("a", true), args -> 1));
+
+        assertThatThrownBy(() -> registry.invoke("add", Map.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("入参校验失败");
+        assertThat(registry.invoke("add", Map.of("a", 2))).isEqualTo(1);
     }
 }

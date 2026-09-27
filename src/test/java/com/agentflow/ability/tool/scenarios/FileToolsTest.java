@@ -1,9 +1,10 @@
-package com.agentflow.ability.tool.builtin;
+package com.agentflow.ability.tool.scenarios;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.agentflow.ability.tool.scenarios.common.FileTools;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,9 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * scenario/date/userId 缺省回落；scenario 含路径分隔符拒绝。
  * 测试会真实写 reports/ 目录，用后删除自己的文件。
  */
-class SaveReportMdToolTest {
+class FileToolsTest {
 
-    private final SaveReportMdTool tool = new SaveReportMdTool();
+    private final FileTools tool = new FileTools();
 
     @Test
     void savesMarkdown_underScenarioDir_andReturnsPath() throws IOException {

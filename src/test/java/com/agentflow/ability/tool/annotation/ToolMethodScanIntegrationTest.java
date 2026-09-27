@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * （对应验收"一个 @AgentTool 方法启动后出现在 GET /tools"）。
  */
 @SpringBootTest
-class AgentToolScanIntegrationTest {
+class ToolMethodScanIntegrationTest {
 
     @Autowired
     private ToolRegistry toolRegistry;
@@ -30,7 +30,7 @@ class AgentToolScanIntegrationTest {
     }
 
     public static class DemoAgentTools {
-        @AgentTool(name = "add", description = "两数相加")
+        @ToolMethod(name = "add", description = "两数相加")
         public int add(int a, int b) {
             return a + b;
         }

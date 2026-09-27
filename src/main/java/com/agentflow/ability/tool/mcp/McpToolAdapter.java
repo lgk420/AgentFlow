@@ -2,14 +2,14 @@ package com.agentflow.ability.tool.mcp;
 
 import java.util.Map;
 
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 
 /**
  * MCP 工具适配器（T5.5）——把一条 MCP 远端工具 {@link McpSchema.Tool} 包装成
- * {@link ToolDescriptor} 注册进注册中心。
+ * {@link ToolDefinition} 注册进注册中心。
  *
  * <p>映射：
  * <ul>
@@ -33,10 +33,10 @@ public class McpToolAdapter {
     /**
      * 远端工具 → 注册中心的 ToolDescriptor。
      */
-    public ToolDescriptor adapt(McpSchema.Tool tool) {
+    public ToolDefinition adapt(McpSchema.Tool tool) {
         String name = connector.prefix() + tool.name();
         JsonNode parameters = mapper.valueToTree(tool.inputSchema());
-        return new ToolDescriptor(name, tool.description(), parameters,
+        return new ToolDefinition(name, tool.description(), parameters,
                 (Map<String, Object> args) -> connector.callTool(tool.name(), args));
     }
 }

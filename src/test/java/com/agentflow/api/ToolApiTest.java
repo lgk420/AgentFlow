@@ -9,8 +9,9 @@ import java.util.Map;
 
 import com.agentflow.api.ToolApi.ToolSummary;
 import com.agentflow.ability.tool.ToolConflictException;
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,7 @@ class ToolApiTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        registry = new ToolRegistry(null);
+        registry = new ToolRegistry(new ObjectMapper());
         api = new ToolApi(registry);
         callbackServer = HttpServer.create(new InetSocketAddress(0), 0);
         callbackServer.start();
@@ -62,7 +63,7 @@ class ToolApiTest {
 
     @Test
     void list_returnsRegisteredTools() {
-        registry.register(new ToolDescriptor("add", "加法", null, args -> 1));
+        registry.register(new ToolDefinition("add", "加法", null, args -> 1));
 
         List<ToolSummary> summaries = api.list();
 
@@ -71,7 +72,7 @@ class ToolApiTest {
         assertThat(s.getName()).isEqualTo("add");
         assertThat(s.getDescription()).isEqualTo("加法");
         assertThat(s.getParameters()).isNull();
-        assertThat(s.getTimeoutMs()).isEqualTo(ToolDescriptor.DEFAULT_TIMEOUT_MS);
+        assertThat(s.getTimeoutMs()).isEqualTo(ToolDefinition.DEFAULT_TIMEOUT_MS);
     }
 
     @Test

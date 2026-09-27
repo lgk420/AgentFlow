@@ -22,7 +22,7 @@ import com.agentflow.engine.scheduler.ConditionEvaluator;
 import com.agentflow.engine.model.state.RunStatus;
 import com.agentflow.engine.model.state.WorkflowState;
 import com.agentflow.runtime.checkpoint.InMemoryCheckpointStore;
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -43,7 +43,7 @@ class AgenticLoopExecutorTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private final StubLlmClient gateway = new StubLlmClient();
-    private final ToolRegistry registry = new ToolRegistry(null); // 本测试不涉及入参校验（T5.3 另有测试）
+    private final ToolRegistry registry = new ToolRegistry(new ObjectMapper()); // 本测试不涉及入参校验（T5.3 另有测试）
     private final AgenticLoopExecutor executor =
             new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
 
@@ -68,7 +68,7 @@ class AgenticLoopExecutorTest {
         ObjectNode properties = schema.putObject("properties");
         properties.putObject("a").put("type", "number");
         properties.putObject("b").put("type", "number");
-        registry.register(new ToolDescriptor(name, "加法工具", schema, args -> {
+        registry.register(new ToolDefinition(name, "加法工具", schema, args -> {
             int a = ((Number) args.get("a")).intValue();
             int b = ((Number) args.get("b")).intValue();
             return a + b;

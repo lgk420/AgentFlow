@@ -14,7 +14,7 @@ import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -106,7 +106,7 @@ public class AgenticLoopExecutor implements NodeExecutor {
      */
     private List<LlmToolDefinition> resolveTools(NodeDefinition node) {
         return node.getTools().stream().map(name -> {
-            ToolDescriptor d = toolRegistry.get(name);
+            ToolDefinition d = toolRegistry.get(name);
             if (d == null) {
                 throw new IllegalStateException("工具未注册: " + name);
             }

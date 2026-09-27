@@ -8,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -20,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class RemoteToolInvoker implements ToolInvoker {
 
     /**
-     * 单次回调超时（秒），与 {@link ToolDescriptor#DEFAULT_TIMEOUT_MS} 一致。
+     * 单次回调超时（秒），与 {@link ToolDefinition#DEFAULT_TIMEOUT_MS} 一致。
      */
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 

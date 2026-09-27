@@ -1,6 +1,6 @@
 package com.agentflow.runtime.worker;
 
-import com.agentflow.ability.tool.annotation.AgentTool;
+import com.agentflow.ability.tool.annotation.ToolMethod;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,12 +61,12 @@ class EventDrivenExecutionTest {
     /** t2/parallel 的 TOOL 节点引用的桩工具（同 RunApiTest）。 */
     public static class ParallelQueryTools {
 
-        @AgentTool(name = "query_a", description = "桩工具 A")
+        @ToolMethod(name = "query_a", description = "桩工具 A")
         public String queryA() {
             return "query_a 桩输出";
         }
 
-        @AgentTool(name = "query_b", description = "桩工具 B")
+        @ToolMethod(name = "query_b", description = "桩工具 B")
         public String queryB() {
             return "query_b 桩输出";
         }

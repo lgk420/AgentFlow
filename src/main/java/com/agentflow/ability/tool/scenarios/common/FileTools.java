@@ -1,11 +1,11 @@
-package com.agentflow.ability.tool.builtin;
+package com.agentflow.ability.tool.scenarios.common;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import com.agentflow.ability.tool.annotation.AgentTool;
+import com.agentflow.ability.tool.annotation.ToolMethod;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * <p>{@code scenario} 是工作流场景命名空间（不同工作流各占一个子目录），拒绝路径分隔符防逃逸。
  */
 @Component
-public class SaveReportMdTool {
+public class FileTools {
 
     /**
      * 报告输出根目录（相对引擎工作目录）。
@@ -39,7 +39,7 @@ public class SaveReportMdTool {
      * @param scenario   工作流场景名（决定 reports/ 下的子目录；可缺省）
      * @return 保存的相对路径
      */
-    @AgentTool(name = "save_report_md",
+    @ToolMethod(name = "save_report_md",
             description = "把生成的教练报告保存为 markdown 文件（reports/{场景}/ 目录），返回保存路径")
     public String saveReportMd(String reportText, String date, String userId, String scenario) {
         if (reportText == null || reportText.isBlank()) {

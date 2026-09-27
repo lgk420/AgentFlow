@@ -1,7 +1,6 @@
-package com.agentflow.ability.tool;
+package com.agentflow.ability.tool.dto;
 
-import java.util.Map;
-
+import com.agentflow.ability.tool.ToolInvoker;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -11,7 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * T5.3 交给 json-schema-validator 校验入参，同时 T4.3 循环把同一份转成模型 function-calling 定义——
  * 一套 schema 两个用途（QA/架构 9.3）。不泄漏 networknt 的 JsonSchema 类型到核心模型。
  */
-public class ToolDescriptor {
+public class ToolDefinition {
 
     /**
      * 工具名，注册中心内唯一（T5.1 重名注册报错）。
@@ -41,28 +40,28 @@ public class ToolDescriptor {
     /**
      * 执行器：方法引用 / MCP 工具 / 远程的统一适配。
      */
-    private ToolInvoker invoker;
+    private ToolInvoker toolInvoker;
 
     /**
      * timeoutMs 缺省值（10 秒）。
      */
     public static final long DEFAULT_TIMEOUT_MS = 10_000L;
 
-    public ToolDescriptor() {
+    public ToolDefinition() {
     }
 
-    public ToolDescriptor(String name, String description, JsonNode parameters, ToolInvoker invoker) {
-        this(name, description, parameters, null, DEFAULT_TIMEOUT_MS, invoker);
+    public ToolDefinition(String name, String description, JsonNode parameters, ToolInvoker toolInvoker) {
+        this(name, description, parameters, null, DEFAULT_TIMEOUT_MS, toolInvoker);
     }
 
-    public ToolDescriptor(String name, String description, JsonNode parameters,
-                          String category, long timeoutMs, ToolInvoker invoker) {
+    public ToolDefinition(String name, String description, JsonNode parameters,
+                          String category, long timeoutMs, ToolInvoker toolInvoker) {
         this.name = name;
         this.description = description;
         this.parameters = parameters;
         this.category = category;
         this.timeoutMs = timeoutMs;
-        this.invoker = invoker;
+        this.toolInvoker = toolInvoker;
     }
 
     public String getName() {
@@ -105,11 +104,11 @@ public class ToolDescriptor {
         this.timeoutMs = timeoutMs;
     }
 
-    public ToolInvoker getInvoker() {
-        return invoker;
+    public ToolInvoker getToolInvoker() {
+        return toolInvoker;
     }
 
-    public void setInvoker(ToolInvoker invoker) {
-        this.invoker = invoker;
+    public void setToolInvoker(ToolInvoker toolInvoker) {
+        this.toolInvoker = toolInvoker;
     }
 }

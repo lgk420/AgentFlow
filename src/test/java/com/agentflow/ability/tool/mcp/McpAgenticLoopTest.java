@@ -12,7 +12,6 @@ import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.WorkflowState;
 import com.agentflow.ability.tool.ToolRegistry;
-import com.agentflow.ability.tool.ToolSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
@@ -30,7 +29,7 @@ class McpAgenticLoopTest {
     @Test
     void agenticLoop_callsMcpTool_andAnswers() {
         try (McpConnector connector = McpConnector.connect(McpConnectorIntegrationTest.demoServerConfig())) {
-            ToolRegistry registry = new ToolRegistry(new ToolSchemaValidator(new ObjectMapper()));
+            ToolRegistry registry = new ToolRegistry(new ObjectMapper());
             McpToolAdapter adapter = new McpToolAdapter(connector, new ObjectMapper());
             for (McpSchema.Tool tool : connector.listTools()) {
                 registry.register(adapter.adapt(tool));

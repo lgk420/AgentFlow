@@ -11,7 +11,6 @@ import com.agentflow.api.RegisterToolRequest;
 import com.agentflow.api.ToolApi;
 import com.agentflow.api.ToolApi.ToolSummary;
 import com.agentflow.ability.tool.ToolRegistry;
-import com.agentflow.ability.tool.ToolSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
@@ -41,7 +40,7 @@ public final class ToolApiDemo {
         String url = "http://localhost:" + callback.getAddress().getPort() + "/echo";
         System.out.println("① 起本地回调端点扮演外部系统 → " + url);
 
-        ToolRegistry registry = new ToolRegistry(new ToolSchemaValidator(new ObjectMapper()));
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
         ToolApi api = new ToolApi(registry);
 
         // ② 动态注册：name/description/schema + 回调 url

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
@@ -19,7 +20,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
  * <p>生命周期：按配置起 stdio transport（{@code command + args} 拉起本地 server 进程）→
  * {@code initialize} 握手 → {@link #listTools()} 发现 → {@link #callTool} 调用 → {@link #close}。
  * 工具发现 / 调用的产物（{@link McpSchema.Tool} / {@link CallToolResult}）是裸协议数据，
- * 由 {@link McpToolAdapter} 包装成 {@link com.agentflow.ability.tool.ToolDescriptor} 注册进注册中心。
+ * 由 {@link McpToolAdapter} 包装成 {@link ToolDefinition} 注册进注册中心。
  *
  * <p>调用结果解析：优先 {@code structuredContent()}（结构化 Map/List），否则取文本内容拼串。
  */

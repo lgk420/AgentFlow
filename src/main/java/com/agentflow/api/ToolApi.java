@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.agentflow.ability.tool.RemoteToolInvoker;
 import com.agentflow.ability.tool.ToolConflictException;
-import com.agentflow.ability.tool.ToolDescriptor;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.HttpStatus;
@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 工具 API（T5.2 起步，T5.6 补全 register/delete）——动态注册/注销（来源②编程式）。
  *
- * <p>不直接序列化 {@link ToolDescriptor}：其 {@code invoker} 是函数式接口、Jackson 无法表达，
+ * <p>不直接序列化 {@link ToolDefinition}：其 {@code invoker} 是函数式接口、Jackson 无法表达，
  * 故用不含 invoker 的 {@link ToolSummary} 输出。
  *
  * <p>注册语义：POST /api/v1/tools，body = name/description/parameters/url；
@@ -60,7 +60,7 @@ public class ToolApi {
         if (request.getUrl() == null || request.getUrl().isBlank()) {
             throw new IllegalArgumentException("工具缺少 url（回调地址）");
         }
-        ToolDescriptor descriptor = new ToolDescriptor(name, request.getDescription(), request.getParameters(),
+        ToolDefinition descriptor = new ToolDefinition(name, request.getDescription(), request.getParameters(),
                 new RemoteToolInvoker(request.getUrl()));
         toolRegistry.register(descriptor);
         return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(descriptor));
@@ -77,7 +77,7 @@ public class ToolApi {
         return ResponseEntity.noContent().build();
     }
 
-    private static ToolSummary toSummary(ToolDescriptor d) {
+    private static ToolSummary toSummary(ToolDefinition d) {
         return new ToolSummary(d.getName(), d.getDescription(), d.getParameters(), d.getTimeoutMs());
     }
 

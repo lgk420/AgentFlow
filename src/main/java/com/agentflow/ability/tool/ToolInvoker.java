@@ -15,7 +15,7 @@ public interface ToolInvoker {
     /**
      * 执行工具。
      *
-     * @param args 工具入参（JSON 对象形态），已通过 ToolSchemaValidator 校验
+     * @param args 工具入参（JSON 对象形态），已通过 ToolRegistry 的入参校验
      * @return 工具输出，任意 JSON 可序列化类型
      */
     Object invoke(Map<String, Object> args);
