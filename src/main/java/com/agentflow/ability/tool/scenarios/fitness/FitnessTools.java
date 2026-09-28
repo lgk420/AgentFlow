@@ -16,36 +16,32 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 健身教练助手的工具集（T5.4）——**一个场景一个类**：3 个工具 + 共享计算。
+ * 健身教练助手的工具集（T5.4）——**一个场景一个类**：2 个工具 + 共享计算。
  *
- * <p>三个工具是一条链（工作流顺序 store → history_query → metrics），共用同一份 Redis 键约定
- * （见 {@link #storeLog}）与同一套计算（见类末的静态方法）。
+ * <p>工具链：{@link #trainingLogMemory}（存本次 + 读回全部）→ {@link #trainingMetrics}（算指标），
+ * 共用同一份 Redis 键约定（见 {@link #trainingLogMemory}）与同一套计算（见类末的静态方法）。
  * 它们靠 {@link ToolMethod#name()} 区分工具名，Java 方法名只给本类看。
  */
 @Component
 public class FitnessTools {
 
     /**
-     * 与 DSL store 节点的 {@code {{inputs.userId | 'default-user'}}} 对齐。
+     * 训练日志能记的部位——与知识库 {@code 01-动作要领.md} 的 {@code 肌群:} 标签一一对应，
+     * 按肌群检索才对得上。其中只有 {@code 腿/胸/背} 是大肌群（进轮换），其余算小肌群。
      */
-    public static final String DEFAULT_USER_ID = "default-user";
+    private static final Set<String> MUSCLE_GROUPS = Set.of("腿", "胸", "背", "肩", "手臂", "功能性");
 
-    /**
-     * 三大肌群固定循环：腿→胸→背→腿。
-     */
-    private static final Map<String, String> NEXT_GROUP = Map.of("腿", "胸", "胸", "背", "背", "腿");
-    private static final Set<String> MUSCLE_GROUPS = NEXT_GROUP.keySet();
     private static final Pattern DATE_PATTERN = Pattern.compile("\\d{8}");
 
     /**
-     * accessoryHistory 固定近 2 周（大带小参考近史）。
+     * {@link #trainingLogMemory} 不传 weeks 时的历史窗口。
      */
-    private static final int ACCESSORY_WEEKS = 2;
+    private static final int DEFAULT_WEEKS = 6;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
 
     /**
-     * volumeDropAlert 阈值：较上次跌幅 ≥10%。
+     * volumeDropAlert 阈值：较上次**同部位**跌幅 ≥10%。
      */
     private static final double VOLUME_DROP_THRESHOLD = -10.0;
 
@@ -62,82 +58,67 @@ public class FitnessTools {
         this.redis = redis;
     }
 
-    // ═══════════════════ 工具 1：训练日志存储 ═══════════════════
+    // ═══════════════════ 工具 1：训练日志存取 ═══════════════════
 
     /**
-     * 写 {@code log:{userId}:{date}} Hash，并校验 腿→胸→背 轮换顺序。
+     * 写入本次训练日志，然后读回该用户近 N 周的全部记录。
      *
-     * <p>键约定（与 history_query 配套）：Hash {@code log:{userId}:{date}} 存 date / muscleGroup / json；
+     * <p><b>为什么存和读在一个工具里</b>：两者共用同一份键约定，而且下游要的"历史"天然包含刚存的这条
+     * （{@code history[0]} 就是本次）——分成两个工具只是多一次调用、多一份参数。
+     *
+     * <p>键约定（另一个工具 {@link #trainingMetrics} 按它读回的量算指标）：
+     * Hash {@code log:{userId}:{date}} 存 date / primaryMuscleGroup / json；
      * ZSet {@code history:{userId}} 的 member=date、score=YYYYMMDD 数值，供按时间范围取近 N 周。
      *
-     * <p>轮换校验是<b>严格循环</b>：上次肌群必须是环中今天的上一个（腿→胸、胸→背、背→腿），
-     * 重复 / 跳跃报 {@code sequenceOk:false} + {@code violation}；首次记录或上次肌群无法识别则放行。
-     * 同日重复录入不计数（按严格早于今天的上一条判定）。
+     * <p><b>不做轮换校验</b>：这个工具只负责存取，不做业务判断——轮换规则（"最近两次不同肌群之外"）
+     * 由 plan 节点按历史自己推。
+     *
+     * @param log    本次日志（parsing 节点的整个输出）
+     * @param userId 用户标识。训练数据按它分账，与对话记忆的 sessionId 是两套
+     * @param weeks  历史窗口；不传取 {@value #DEFAULT_WEEKS}
      */
-    @ToolMethod(name = "training_log_store", description = "存储每日训练日志并校验肌群轮换顺序（腿→胸→背），返回是否违规")
+    @ToolMethod(name = "training_log_memory",
+            description = "记录本次训练日志，并返回该用户近 N 周的全部训练记录")
     @SuppressWarnings("unchecked")
-    public Map<String, Object> storeLog(Map<String, Object> log, String userId) {
+    public Map<String, Object> trainingLogMemory(Map<String, Object> log, String userId, Integer weeks) {
+        store(log, userId);
+        return historyForUser(userId, weeks != null ? weeks : DEFAULT_WEEKS, LocalDate.now());
+    }
+
+    /**
+     * 写入 + 校验。校验不过抛异常——宁可这次失败，也不要脏数据进库（它会污染之后所有的环比与轮换判断）。
+     */
+    @SuppressWarnings("unchecked")
+    private void store(Map<String, Object> log, String userId) {
         String date = getString(log, "date");
-        String muscleGroup = getString(log, "muscleGroup");
+        String primaryMuscleGroup = getString(log, "primaryMuscleGroup");
         if (!DATE_PATTERN.matcher(date).matches()) {
             throw new IllegalArgumentException("训练日志缺少合法 date（YYYYMMDD 8 位数字）：" + date);
         }
-        if (!MUSCLE_GROUPS.contains(muscleGroup)) {
-            throw new IllegalArgumentException("训练日志缺少合法 muscleGroup（腿/胸/背）：" + muscleGroup);
+        if (!MUSCLE_GROUPS.contains(primaryMuscleGroup)) {
+            throw new IllegalArgumentException(
+                    "训练日志缺少合法 primaryMuscleGroup（腿/胸/背/肩/手臂/功能性）：" + primaryMuscleGroup);
         }
 
-        String hashKey = "log:" + userId + ":" + date;
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("date", date);
-        fields.put("muscleGroup", muscleGroup);
+        fields.put("primaryMuscleGroup", primaryMuscleGroup);
         fields.put("json", writeJson(log));
-        redis.opsForHash().putAll(hashKey, fields);
+        redis.opsForHash().putAll("log:" + userId + ":" + date, fields);
 
         redis.opsForZSet().add("history:" + userId, date, toDateNum(date));
-
-        String lastGroup = previousMuscleGroup(userId, date);
-        return rotationResult(muscleGroup, lastGroup);
     }
 
     /**
-     * {@code {stored, sequenceOk, lastMuscleGroup, violation}}。
+     * 读回近 N 周记录，返回 {@code {history: [...]}}（日期降序）。
+     *
+     * <p>内部入口：today 由调用方给，测试才能确定性（不用 {@link LocalDate#now()}）。
      */
-    private Map<String, Object> rotationResult(String todayGroup, String lastGroup) {
-        boolean sequenceOk;
-        String violation = null;
-        if (lastGroup == null) {
-            sequenceOk = true; // 首次记录
-        } else {
-            String expected = NEXT_GROUP.get(lastGroup);
-            if (expected == null) {
-                sequenceOk = true; // 上次肌群无法识别（非腿/胸/背），无法校验
-            } else if (expected.equals(todayGroup)) {
-                sequenceOk = true;
-            } else {
-                sequenceOk = false;
-                violation = "肌群轮换违规：上次「" + lastGroup + "」今天「" + todayGroup + "」，"
-                        + "应按 腿→胸→背 轮到「" + expected + "」";
-            }
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("stored", true);
-        result.put("sequenceOk", sequenceOk);
-        result.put("lastMuscleGroup", lastGroup);
-        result.put("violation", violation);
-        return result;
-    }
-
-    /**
-     * 严格早于今天的最近一条记录的肌群；同日重复录入不计为轮换一步。
-     */
-    private String previousMuscleGroup(String userId, String date) {
-        Set<String> prev = redis.opsForZSet()
-                .reverseRangeByScore("history:" + userId, 0, toDateNum(date) - 1, 0, 1);
-        if (prev == null || prev.isEmpty()) {
-            return null;
-        }
-        Object group = redis.opsForHash().get("log:" + userId + ":" + prev.iterator().next(), "muscleGroup");
-        return group == null ? null : group.toString();
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> historyForUser(String userId, int weeks, LocalDate today) {
+        List<Map<String, Object>> history =
+                loadRange(userId, toDateNum(today.minusWeeks(weeks)), weeks * 7);
+        return Map.of("history", history);
     }
 
     private String writeJson(Object value) {
@@ -155,41 +136,6 @@ public class FitnessTools {
     private static String getString(Map<String, Object> map, String key) {
         Object val = map.get(key);
         return val != null ? val.toString() : "";
-    }
-
-    // ═══════════════════ 工具 2：历史检索 ═══════════════════
-
-    /**
-     * 查用户训练记录，与 training_log_store 共用键约定。
-     *
-     * <p>返回两份：{@code recentActions}（近 N 周全记录，喂 workout_metrics 与 LLM）、
-     * {@code accessoryHistory}（近 2 周，供「大带小」参考）。
-     *
-     * <p>userId 固定 {@value #DEFAULT_USER_ID}（与 DSL store 节点默认值一致）。窗口按「今天」往回算，
-     * {@link #queryForUser} 注入 today 便于测试。
-     */
-    @ToolMethod(name = "training_history_query",
-            description = "查询用户近 N 周训练记录：recentActions 近 N 周全记录，accessoryHistory 近 2 周记录")
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> queryHistory(String muscle_group, Integer weeks) {
-        int n = weeks != null ? weeks : 6;
-        return queryForUser(DEFAULT_USER_ID, muscle_group, n, LocalDate.now());
-    }
-
-    /**
-     * 内部查询入口：today 由调用方给，测试才能确定性（不用 Date.now）。
-     */
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> queryForUser(String userId, String muscleGroup, int weeks, LocalDate today) {
-        long cutoff = toDateNum(today.minusWeeks(weeks));
-        List<Map<String, Object>> recent = loadRange(userId, cutoff, weeks * 7);
-        long accCutoff = toDateNum(today.minusWeeks(ACCESSORY_WEEKS));
-        List<Map<String, Object>> accessory = loadRange(userId, accCutoff, ACCESSORY_WEEKS * 7);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("recentActions", recent);
-        result.put("accessoryHistory", accessory);
-        return result;
     }
 
     /**
@@ -216,18 +162,26 @@ public class FitnessTools {
         return result;
     }
 
+    /**
+     * 一条历史记录 → 下游要的形状：{@code {date, primaryMuscleGroup, accessoryMuscleGroups, totalVolumeKg, totalCv}}。
+     *
+     * <p><b>为什么不带 {@code actions} 明细</b>：两个消费者都用不上（{@link #trainingMetrics} 只要容量/CV，
+     * plan 节点只要日期/部位/小肌群），而 plan 节点要**整份 history 塞进 prompt**——明细是白付的 token。
+     * 明细只在下面算容量/CV 时**内部**读一下。
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> toDayEntry(String date, String json) {
         try {
             Map<String, Object> log = mapper.readValue(json, Map.class);
             Object actionsObj = log.get("actions");
             List<Map<String, Object>> actions = (List<Map<String, Object>>) actionsObj;
+            List<Map<String, Object>> sets = actions == null ? List.of() : actions;
             Map<String, Object> day = new LinkedHashMap<>();
             day.put("date", date);
-            day.put("muscleGroup", log.get("muscleGroup"));
-            day.put("actions", actions == null ? List.of() : actions);
-            day.put("totalVolumeKg", round(totalVolumeKg(actions == null ? List.of() : actions)));
-            day.put("totalCv", dayTotalCv(actions == null ? List.of() : actions));
+            day.put("primaryMuscleGroup", log.get("primaryMuscleGroup"));
+            day.put("accessoryMuscleGroups", log.getOrDefault("accessoryMuscleGroups", List.of()));
+            day.put("totalVolumeKg", round(totalVolumeKg(sets)));
+            day.put("totalCv", dayTotalCv(sets));
             return day;
         } catch (JsonProcessingException e) {
             return null; // 脏数据跳过，不阻断整次查询
@@ -238,20 +192,27 @@ public class FitnessTools {
         return Long.parseLong(date.format(DATE_FMT));
     }
 
-    // ═══════════════════ 工具 3：指标计算 ═══════════════════
+    // ═══════════════════ 工具 2：指标计算 ═══════════════════
 
     /**
      * 纯计算，不依赖存储。
      *
-     * <p>输入：{@code actions}（本次 parse 输出，含每组明细）、{@code history}（history_query 的
-     * {@code recentActions}，<b>新→旧排列，最近一条即刚入库的当前会话</b>）。
+     * <p>输入：{@code actions}（本次 parse 输出，含每组明细）、{@code history}（{@link #trainingLogMemory}
+     * 返回的历史，<b>新→旧排列，第 0 条即刚入库的本次</b>）、{@code primaryMuscleGroup}（本次主练部位）。
      *
-     * <p>输出：总容量（吨）、{@code changePct}（对上一次训练——history 第二条，不足两条为 null）、
-     * {@code totalCv}、每动作指标、{@code volumeDropAlert}、{@code comfortZoneWarning}。
+     * <p><b>环比基准是「上次同部位」，不是「上一条记录」</b>：按 腿→胸→背 轮换，上一条记录必然是另一个
+     * 肌群——拿腿日的容量跟胸日比没有意义。取法是<b>跳过第 0 条（本次），往后找第一条同部位</b>；
+     * 找不到（首训、或该部位在窗口内只练过这一次）→ 无基准，{@code changePct} 为 null。
+     *
+     * <p>输出：总容量（吨）、{@code changePct}、{@code totalCv}、每动作指标、
+     * {@code volumeDropAlert}、{@code comfortZoneWarning}。
      */
-    @ToolMethod(name = "workout_metrics",
-            description = "计算总容量(吨)、Epley 1RM、真实 CV(组重量变异系数)、环比涨幅及硬标记（容量骤降/舒适区警告）")
-    public Map<String, Object> computeMetrics(List<Map<String, Object>> actions, List<Map<String, Object>> history) {
+    @ToolMethod(name = "training_metrics",
+            description = "计算总容量(吨)、Epley 1RM、真实 CV(组重量变异系数)、环比涨幅(较上次同部位)"
+                    + "及硬标记（容量骤降/舒适区警告）")
+    public Map<String, Object> trainingMetrics(List<Map<String, Object>> actions,
+                                               List<Map<String, Object>> history,
+                                               String primaryMuscleGroup) {
         double totalVolumeKg = totalVolumeKg(actions);
 
         List<Map<String, Object>> actionMetrics = new ArrayList<>();
@@ -259,13 +220,14 @@ public class FitnessTools {
             actionMetrics.add(actionMetrics(a));
         }
 
-        Double prevVolumeKg = previousSessionVolumeKg(history);
+        Map<String, Object> baseline = previousSameGroupSession(history, primaryMuscleGroup);
+        Double prevVolumeKg = volumeKgOf(baseline);
         Double changePct = (prevVolumeKg != null && prevVolumeKg > 0)
                 ? (totalVolumeKg - prevVolumeKg) / prevVolumeKg * 100
                 : null;
 
         boolean volumeDropAlert = changePct != null && changePct <= VOLUME_DROP_THRESHOLD;
-        boolean comfortZoneWarning = changePct != null && comfortZone(history, changePct);
+        boolean comfortZoneWarning = changePct != null && comfortZone(baseline, changePct);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("totalVolume", round(totalVolumeKg / 1000));
@@ -288,22 +250,44 @@ public class FitnessTools {
     }
 
     /**
-     * 上一次训练日总容量。history 新→旧排列、最近一条是刚入库的当前会话，故基准取<b>第二条</b>；
-     * 不足两条（首训 / 仅当前会话）→ 无基准，返回 null。
+     * 环比基准：**跳过第 0 条**（刚入库的本次），往后找第一条同部位的记录；找不到返回 null。
+     *
+     * <p>按位置找而不是按日期算——{@code history} 已经是「本次及之前、日期降序」，第 0 条必是本次，
+     * 所以从 1 开始扫就是"本次之前"。
      */
-    private static Double previousSessionVolumeKg(List<Map<String, Object>> history) {
+    private static Map<String, Object> previousSameGroupSession(List<Map<String, Object>> history,
+                                                                String primaryMuscleGroup) {
         if (history == null || history.size() < 2) {
             return null;
         }
-        Object v = history.get(1).get("totalVolumeKg");
+        for (int i = 1; i < history.size(); i++) {
+            Map<String, Object> day = history.get(i);
+            if (primaryMuscleGroup != null && primaryMuscleGroup.equals(day.get("primaryMuscleGroup"))) {
+                return day;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 某条历史记录的总容量；记录为空 / 值不是数字 → null。
+     */
+    private static Double volumeKgOf(Map<String, Object> day) {
+        if (day == null) {
+            return null;
+        }
+        Object v = day.get("totalVolumeKg");
         return v instanceof Number n ? n.doubleValue() : null;
     }
 
-    private static boolean comfortZone(List<Map<String, Object>> history, double changePct) {
-        if (history == null || history.size() < 2) {
+    /**
+     * 舒适区警告：<b>基准那一条</b>的组间 CV 很低（重量几乎不加，动作做得太"舒服"）且本次容量几乎没动。
+     */
+    private static boolean comfortZone(Map<String, Object> baseline, double changePct) {
+        if (baseline == null) {
             return false;
         }
-        Object cv = history.get(1).get("totalCv");
+        Object cv = baseline.get("totalCv");
         if (!(cv instanceof Number n)) {
             return false;
         }

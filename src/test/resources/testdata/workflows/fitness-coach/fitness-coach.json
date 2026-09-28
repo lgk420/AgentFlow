@@ -1,7 +1,7 @@
 {
   "id": "fitness-coach",
   "name": "健身教练助手",
-  "version": 1,
+  "version": 4,
   "nodes": {
     "start": { "type": "START" },
 
@@ -70,7 +70,8 @@
       "tool": "training_log_memory",
       "inputs": {
         "log": "{{nodes.llm_training_log_parsing_node.output}}",
-        "userId": "{{inputs.userId | 'default-user'}}"
+        "userId": "{{inputs.userId | 'default-user'}}",
+        "weeks": 6
       }
     },
 
@@ -86,7 +87,7 @@
 
     "llm_training_plan_node": {
       "type": "LLM",
-      "prompt": "你是健身教练。根据用户的训练记录，定下一次训练的计划。\n\n近 6 周记录（新→旧，第 0 条是本次）：{{nodes.tool_training_log_memory_node.output.history}}\n\n规则：\n· 大肌群只有 腿 / 胸 / 背 三个，进轮换。下次大肌群 = 这三个里「最近两次不同肌群之外」的那一个。历史不足两次时回退：没有记录 → 腿；只练过一种 → 它的下一个（腿→胸→背→腿）。\n· 小肌群 = 除 腿 / 胸 / 背 以外的肌肉部位（肩 / 手臂 / 小腿 / 三角后束 等）。按大带小原则给下次配 1~2 个，参考用户近期练过哪些小肌群，久没练的优先。\n· 判断「最近两次」时只看主练部位是 腿 / 胸 / 背 的记录；肩 / 手臂 / 功能性 的日子不算轮换的一步（肩日/手臂日就是小肌群当主练部位的情况）。\n\n只输出 JSON。",
+      "prompt": "你是健身教练。根据用户的训练记录，定下一次训练的计划。\n\n训练记录（新→旧，第 0 条是本次）：{{nodes.tool_training_log_memory_node.output.history}}\n\n规则：\n· 大肌群只有 腿 / 胸 / 背 三个，进轮换。下次大肌群 = 这三个里「最近两次不同肌群之外」的那一个。历史不足两次时回退：没有记录 → 腿；只练过一种 → 它的下一个（腿→胸→背→腿）。\n· 小肌群 = 除 腿 / 胸 / 背 以外的肌肉部位（肩 / 手臂 / 小腿 / 三角后束 等）。按大带小原则给下次配 1~2 个，参考用户近期练过哪些小肌群，久没练的优先。\n· 判断「最近两次」时只看主练部位是 腿 / 胸 / 背 的记录；肩 / 手臂 / 功能性 的日子不算轮换的一步（肩日/手臂日就是小肌群当主练部位的情况）。\n\n只输出 JSON。",
       "outputSchema": {
         "type": "object",
         "properties": {
