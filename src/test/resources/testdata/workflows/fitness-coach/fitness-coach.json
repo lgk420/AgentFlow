@@ -1,17 +1,43 @@
 {
   "id": "fitness-coach",
   "name": "健身教练助手",
+  "version": 1,
   "nodes": {
     "start": { "type": "START" },
-    "parse": {
+
+    "llm_intent_route_node": {
       "type": "LLM",
-      "model": "qwen-plus",
-      "prompt": "把用户的训练日志解析为结构化 JSON，只输出 JSON：识别训练日期、主肌群、每个动作的组数/次数/重量。用户日志：{{inputs.userLog}}",
+      "prompt": "你是健身教练助手的意图分流员。判断用户这句话是「提交训练日志」（说了某天练了什么，含动作/重量/组次）还是「聊天/提问」（其它一切：问训练相关的问题、要建议、闲聊）。\n\n用户说：{{inputs.userMessage}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string",
+            "enum": ["LOG", "CHAT"],
+            "description": "LOG=提交训练日志，CHAT=聊天/提问/要建议"
+          }
+        },
+        "required": ["intent"]
+      }
+    },
+
+    "llm_training_log_parsing_node": {
+      "type": "LLM",
+      "prompt": "把用户的训练日志解析为结构化 JSON，只输出 JSON：识别训练日期、本次主练部位、本次练到的小肌群、每个动作的组数/次数/重量。\n\n· date = 训练日期 YYYYMMDD。日志里写明了就照抄；没写就用本次运行的日期 {{nodes.start.output.today}}。\n· primaryMuscleGroup = 本次训练的主练部位，按动作实际练的部位取值，只能取：腿 / 胸 / 背 / 肩 / 手臂 / 功能性。不确定就按最接近的填，不要往 腿/胸/背 里硬塞。\n· accessoryMuscleGroups = 本次顺带练到的小肌群（如 二头 / 三头 / 小腿 / 三角后束），按动作判断；没练就空数组。\n\n用户日志：{{inputs.userMessage}}",
       "outputSchema": {
         "type": "object",
         "properties": {
           "date": { "type": "string", "description": "训练日期 YYYYMMDD" },
-          "muscleGroup": { "type": "string", "enum": ["腿", "胸", "背"] },
+          "primaryMuscleGroup": {
+            "type": "string",
+            "enum": ["腿", "胸", "背", "肩", "手臂", "功能性"],
+            "description": "本次训练的主练部位（大肌群是 腿/胸/背 三个，肩/手臂/功能性不算大肌群）"
+          },
+          "accessoryMuscleGroups": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "本次实际练到的小肌群（如 二头 / 三头 / 小腿 / 三角后束），没练则为空数组"
+          },
           "actions": {
             "type": "array",
             "items": {
@@ -35,96 +61,131 @@
             }
           }
         },
-        "required": ["date", "muscleGroup", "actions"]
+        "required": ["date", "primaryMuscleGroup", "accessoryMuscleGroups", "actions"]
       }
     },
-    "store": {
+
+    "tool_training_log_memory_node": {
       "type": "TOOL",
-      "tool": "training_log_store",
+      "tool": "training_log_memory",
       "inputs": {
-        "log": "{{nodes.parse.output}}",
+        "log": "{{nodes.llm_training_log_parsing_node.output}}",
         "userId": "{{inputs.userId | 'default-user'}}"
       }
     },
-    "history_query": {
+
+    "tool_training_metrics_node": {
       "type": "TOOL",
-      "tool": "training_history_query",
+      "tool": "training_metrics",
       "inputs": {
-        "muscle_group": "{{nodes.parse.output.muscleGroup}}",
-        "weeks": 6
+        "actions": "{{nodes.llm_training_log_parsing_node.output.actions}}",
+        "history": "{{nodes.tool_training_log_memory_node.output.history}}",
+        "primaryMuscleGroup": "{{nodes.llm_training_log_parsing_node.output.primaryMuscleGroup}}"
       }
     },
-    "kb_retrieve": {
+
+    "llm_training_plan_node": {
+      "type": "LLM",
+      "prompt": "你是健身教练。根据用户的训练记录，定下一次训练的计划。\n\n近 6 周记录（新→旧，第 0 条是本次）：{{nodes.tool_training_log_memory_node.output.history}}\n\n规则：\n· 大肌群只有 腿 / 胸 / 背 三个，进轮换。下次大肌群 = 这三个里「最近两次不同肌群之外」的那一个。历史不足两次时回退：没有记录 → 腿；只练过一种 → 它的下一个（腿→胸→背→腿）。\n· 小肌群 = 除 腿 / 胸 / 背 以外的肌肉部位（肩 / 手臂 / 小腿 / 三角后束 等）。按大带小原则给下次配 1~2 个，参考用户近期练过哪些小肌群，久没练的优先。\n· 判断「最近两次」时只看主练部位是 腿 / 胸 / 背 的记录；肩 / 手臂 / 功能性 的日子不算轮换的一步（肩日/手臂日就是小肌群当主练部位的情况）。\n\n只输出 JSON。",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "nextPrimaryMuscleGroup": {
+            "type": "string",
+            "enum": ["腿", "胸", "背"],
+            "description": "下次训练的大肌群（PrimaryMuscleGroup）"
+          },
+          "nextAccessoryMuscleGroups": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "下次训练附带的小肌群（AccessoryMuscleGroup），1~2 个"
+          }
+        },
+        "required": ["nextPrimaryMuscleGroup", "nextAccessoryMuscleGroups"]
+      }
+    },
+
+    "rag_primary_muscle_knowledge_node": {
       "type": "RAG",
-      "query": "{{nodes.parse.output.muscleGroup}} 训练 渐进超负荷 动作要点",
-      "topK": 3,
+      "query": "{{nodes.llm_training_plan_node.output.nextPrimaryMuscleGroup}} 动作要领 渐进超负荷 加重量",
+      "topK": 5,
       "collection": "workout_kb"
     },
-    "accessory": {
-      "type": "LLM",
-      "model": "qwen-plus",
-      "prompt": "今日主项 {{nodes.parse.output.muscleGroup}}，用户近期小肌群训练史 {{nodes.history_query.output.accessoryHistory}}。按大带小原则，推荐 1~2 个今天应带的小肌群，并简述理由。",
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "accessoryGroups": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["accessoryGroups"]
-      }
+
+    "rag_accessory_muscle_knowledge_node": {
+      "type": "RAG",
+      "query": "{{nodes.llm_training_plan_node.output.nextPrimaryMuscleGroup}} 大带小",
+      "topK": 1,
+      "collection": "workout_kb"
     },
-    "metrics": {
-      "type": "TOOL",
-      "tool": "workout_metrics",
-      "inputs": {
-        "actions": "{{nodes.parse.output.actions}}",
-        "history": "{{nodes.history_query.output.recentActions}}"
-      }
-    },
-    "route": {
-      "type": "LLM",
-      "model": "qwen-plus",
-      "prompt": "硬性标记 volumeDropAlert={{nodes.metrics.output.volumeDropAlert}}、comfortZoneWarning={{nodes.metrics.output.comfortZoneWarning}}，指标与历史对比={{nodes.metrics.output}}，附属推荐={{nodes.accessory.output.accessoryGroups}}。硬标记触发时照实裁决；否则在模糊区间综合判断。只输出 route 和 reason。",
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "route": { "type": "string", "enum": ["WARN", "ADJUST", "NORMAL", "CELEBRATE"] },
-          "reason": { "type": "string" }
-        },
-        "required": ["route", "reason"]
-      }
-    },
-    "report": {
+
+    "agent_review_advice_node": {
       "type": "AGENTIC_LOOP",
-      "model": "deepseek-v4-flash",
-      "systemPrompt": "你是资深健身教练。本次指标={{nodes.metrics.output}}，路由裁决={{nodes.route.output}}，训练知识={{nodes.kb_retrieve.output.chunks}}。请生成两份输出（用 markdown 格式组织：## 小节、列表、**加粗**）：①本次训练复盘报告：容量/强度趋势、动作平衡、问题与鼓励；②下次训练预热处方：按腿→胸→背轮换顺序给出具体动作、组数、次数、重量建议，并结合今日附属推荐 {{nodes.accessory.output.accessoryGroups}}。需要时可用工具查询历史记录与计算容量。",
-      "tools": ["training_history_query", "workout_metrics"],
+      "systemPrompt": "你是资深健身教练。\n\n本次主练部位：{{nodes.llm_training_log_parsing_node.output.primaryMuscleGroup}}\n下次大肌群：{{nodes.llm_training_plan_node.output.nextPrimaryMuscleGroup}}\n下次附带小肌群：{{nodes.llm_training_plan_node.output.nextAccessoryMuscleGroups}}\n本次指标：{{nodes.tool_training_metrics_node.output}}\n大肌群知识：{{nodes.rag_primary_muscle_knowledge_node.output.chunksText}}\n大带小规则：{{nodes.rag_accessory_muscle_knowledge_node.output.chunksText}}\n之前的对话（可能为空）：{{memory.historyText | '（无）'}}\n\n最终输出 JSON，两个字段：\n· summary = 一句话摘要，把这次训练和下次建议浓缩成一句（会写进对话记忆，供后面几轮参考）\n· report = 完整报告，markdown 格式（## 小节、列表、**加粗**）：\n  ①本次训练复盘：容量/强度趋势、动作平衡、问题与鼓励；\n  ②下次训练建议：针对上面的「下次大肌群」给出具体动作、组数、次数、重量，并按「大带小规则」安排附带的小肌群。",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string", "description": "一句话摘要（写进对话记忆用）" },
+          "report": { "type": "string", "description": "完整报告 markdown（复盘 + 下次建议）" }
+        },
+        "required": ["summary", "report"]
+      },
+      "tools": [],
       "maxIterations": 5
     },
-    "save_md": {
+
+    "tool_report_markdown_node": {
       "type": "TOOL",
-      "tool": "save_report_md",
+      "tool": "report_markdown",
       "inputs": {
-        "reportText": "{{nodes.report.output}}",
-        "date": "{{nodes.parse.output.date}}",
+        "reportText": "{{nodes.agent_review_advice_node.output.report}}",
+        "date": "{{nodes.llm_training_log_parsing_node.output.date}}",
         "userId": "{{inputs.userId | 'default-user'}}",
-        "scenario": "fitness-coach"
+        "workflowId": "{{nodes.start.output.workflowId}}"
       }
     },
+
+    "agent_chat_node": {
+      "type": "AGENTIC_LOOP",
+      "systemPrompt": "你是健身教练助手。\n\n之前的对话（为空说明这是第一次）：\n{{memory.historyText | '（无）'}}\n\n用户现在说：{{inputs.userMessage}}\n\n你现在只能依据上面的对话回答，拿不到用户的训练记录和指标；问到这些时如实说明，不要编造。",
+      "tools": [],
+      "maxIterations": 4
+    },
+
+    "memory_conversation_node": {
+      "type": "MEMORY_WRITE",
+      "user": "{{inputs.userMessage | ''}}",
+      "assistant": "{{nodes.agent_review_advice_node.output.summary | ''}}{{nodes.agent_chat_node.output | ''}}"
+    },
+
     "end": { "type": "END" }
   },
+
   "edges": [
-    { "from": "start", "to": "parse", "type": "STATIC" },
-    { "from": "parse", "to": "store", "type": "STATIC" },
-    { "from": "store", "to": "history_query", "type": "STATIC" },
-    { "from": "store", "to": "kb_retrieve", "type": "STATIC" },
-    { "from": "history_query", "to": "accessory", "type": "STATIC" },
-    { "from": "history_query", "to": "metrics", "type": "STATIC" },
-    { "from": "kb_retrieve", "to": "report", "type": "STATIC" },
-    { "from": "accessory", "to": "route", "type": "STATIC" },
-    { "from": "metrics", "to": "route", "type": "STATIC" },
-    { "from": "route", "to": "report", "type": "STATIC" },
-    { "from": "report", "to": "save_md", "type": "STATIC" },
-    { "from": "save_md", "to": "end", "type": "STATIC" },
-    { "from": "report", "to": "end", "type": "STATIC" }
+    { "from": "start", "to": "llm_intent_route_node", "type": "STATIC" },
+
+    { "from": "llm_intent_route_node", "to": "llm_training_log_parsing_node", "type": "CONDITIONAL",
+      "condition": "{{nodes.llm_intent_route_node.output.intent}} == 'LOG'" },
+    { "from": "llm_intent_route_node", "to": "agent_chat_node", "type": "CONDITIONAL",
+      "condition": "{{nodes.llm_intent_route_node.output.intent}} != 'LOG'" },
+
+    { "from": "llm_training_log_parsing_node", "to": "tool_training_log_memory_node", "type": "STATIC" },
+    { "from": "llm_training_log_parsing_node", "to": "tool_training_metrics_node", "type": "STATIC" },
+
+    { "from": "tool_training_log_memory_node", "to": "tool_training_metrics_node", "type": "STATIC" },
+    { "from": "tool_training_log_memory_node", "to": "llm_training_plan_node", "type": "STATIC" },
+
+    { "from": "llm_training_plan_node", "to": "rag_primary_muscle_knowledge_node", "type": "STATIC" },
+    { "from": "llm_training_plan_node", "to": "rag_accessory_muscle_knowledge_node", "type": "STATIC" },
+
+    { "from": "tool_training_metrics_node", "to": "agent_review_advice_node", "type": "STATIC" },
+    { "from": "llm_training_plan_node", "to": "agent_review_advice_node", "type": "STATIC" },
+    { "from": "rag_primary_muscle_knowledge_node", "to": "agent_review_advice_node", "type": "STATIC" },
+    { "from": "rag_accessory_muscle_knowledge_node", "to": "agent_review_advice_node", "type": "STATIC" },
+
+    { "from": "agent_review_advice_node", "to": "tool_report_markdown_node", "type": "STATIC" },
+    { "from": "tool_report_markdown_node", "to": "memory_conversation_node", "type": "STATIC" },
+    { "from": "agent_chat_node", "to": "memory_conversation_node", "type": "STATIC" },
+    { "from": "memory_conversation_node", "to": "end", "type": "STATIC" }
   ]
 }
