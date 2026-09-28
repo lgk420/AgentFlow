@@ -3,7 +3,7 @@ package com.agentflow.engine.scheduler;
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.llm.StubLlmClient;
+import com.agentflow.ability.llm.LlmClient;
 import com.agentflow.engine.model.definition.EdgeDefinition;
 import com.agentflow.engine.model.definition.EdgeType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * T4.4 LlmRouter 单元测试——LLM_DYNAMIC 选边 + 非法 nextNode fallback。
@@ -20,12 +23,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p><b>「模型返回非 JSON」不在这里测</b>——那是 {@code chatStructured} 的实现细节（JSON 解析），
  * 已由 {@code SpringAiLlmClientChatStructuredTest.invalidJson_throws} 直接覆盖真实现。
- * 这里用桩返回预置 Map，只验证<b>路由决策</b>本身。
+ * 这里 mock 掉 {@code chatStructured} 返回预置 Map，只验证<b>路由决策</b>本身。
  */
 class LlmRouterTest {
 
-    private final StubLlmClient gateway = new StubLlmClient();
+    private final LlmClient gateway = mock(LlmClient.class);
     private final LlmRouter router = new LlmRouter(gateway, new ObjectMapper());
+
+    /** 让客户端返回预置的路由决策。 */
+    private void givenModelReturns(Map<String, Object> output) {
+        when(gateway.chatStructured(any(), any())).thenReturn(output);
+    }
 
     /** 三条 LLM_DYNAMIC 候选：analysis_query / measure_parse / plan（legacy classify 同构）。 */
     private static List<EdgeDefinition> candidates() {
@@ -46,25 +54,25 @@ class LlmRouterTest {
 
     @Test
     void route_validNextNode_selectsThatTarget() {
-        gateway.setStructuredOutput(Map.of("nextNode", "measure_parse"));
+        givenModelReturns(Map.of("nextNode", "measure_parse"));
         assertThat(router.route(candidates(), "用户想看体测")).isEqualTo("measure_parse");
     }
 
     @Test
     void route_firstCandidate_alsoSelectable() {
-        gateway.setStructuredOutput(Map.of("nextNode", "analysis_query"));
+        givenModelReturns(Map.of("nextNode", "analysis_query"));
         assertThat(router.route(candidates(), "分析一下")).isEqualTo("analysis_query");
     }
 
     @Test
     void route_invalidNextNode_fallsBackToFirst() {
-        gateway.setStructuredOutput(Map.of("nextNode", "nope"));
+        givenModelReturns(Map.of("nextNode", "nope"));
         assertThat(router.route(candidates(), "x")).isEqualTo("analysis_query");
     }
 
     @Test
     void route_missingNextNode_fallsBackToFirst() {
-        gateway.setStructuredOutput(Map.of("other", 1));
+        givenModelReturns(Map.of("other", 1));
         assertThat(router.route(candidates(), "x")).isEqualTo("analysis_query");
     }
 

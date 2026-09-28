@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * 重排测试替身（T6.7，QA 67 打桩层）——可配置为"原序透传""返回指定结果"或"抛异常"，
- * 并记录最近一次调用参数供断言。非 bean，仅测试构造用（同 StubRetriever / StubLlmClient 套路）。
+ * 并记录最近一次调用参数供断言。非 bean，仅测试构造用（非 Spring bean，测试自己 new）。
  */
 public class StubRagReranker implements RagReranker {
 

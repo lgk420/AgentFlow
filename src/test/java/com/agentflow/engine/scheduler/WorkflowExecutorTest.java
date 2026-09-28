@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.agentflow.ability.memory.TestTemplateContext;
-import com.agentflow.ability.llm.StubLlmClient;
+import com.agentflow.ability.llm.LlmClient;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -34,6 +34,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * T2.2 就绪度调度验收测试。
@@ -415,8 +418,8 @@ class WorkflowExecutorTest {
     @Test
     void llmDynamic_routesToChosenBranch_andDeadBranchesNotExecuted() throws Exception {
         // 路由客户端返回 analysis_query；classify 用 StubLlmNodeExecutor（返回 stubOutput），不与路由客户端冲突
-        StubLlmClient routerGateway = new StubLlmClient();
-        routerGateway.setTextOutput("{\"nextNode\":\"analysis_query\"}");
+        LlmClient routerGateway = mock(LlmClient.class);
+        when(routerGateway.chatStructured(any(), any())).thenReturn(Map.of("nextNode", "analysis_query"));
         LlmRouter router = new LlmRouter(routerGateway, new ObjectMapper());
         WorkflowExecutor dynamic = new WorkflowExecutor(
                 new InMemoryCheckpointStore(), new ParallelDispatcher(4), new ConditionEvaluator(),

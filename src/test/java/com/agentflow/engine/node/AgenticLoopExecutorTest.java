@@ -1,53 +1,88 @@
 package com.agentflow.engine.node;
 
-import com.agentflow.engine.scheduler.ParallelDispatcher;
-
-import com.agentflow.engine.scheduler.WorkflowExecutor;
-
 import java.util.List;
 import java.util.Map;
 
-import com.agentflow.ability.memory.TestTemplateContext;
+import com.agentflow.ability.llm.LlmClient;
 import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.ability.llm.dto.LlmChatResult;
-import com.agentflow.ability.llm.StubLlmClient;
-import com.agentflow.ability.llm.StructuredOutputParser;
 import com.agentflow.ability.llm.dto.LlmToolCall;
 import com.agentflow.ability.llm.dto.LlmToolDefinition;
-import com.agentflow.engine.parse.GraphParser;
-import com.agentflow.engine.template.TemplateResolver;
+import com.agentflow.ability.memory.TestTemplateContext;
+import com.agentflow.ability.tool.ToolRegistry;
+import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.definition.OutputSchema;
 import com.agentflow.engine.model.definition.WorkflowDefinition;
-import com.agentflow.engine.scheduler.ConditionEvaluator;
 import com.agentflow.engine.model.state.RunStatus;
 import com.agentflow.engine.model.state.WorkflowState;
+import com.agentflow.engine.parse.GraphParser;
+import com.agentflow.engine.scheduler.ConditionEvaluator;
+import com.agentflow.engine.scheduler.ParallelDispatcher;
+import com.agentflow.engine.scheduler.WorkflowExecutor;
+import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.runtime.checkpoint.InMemoryCheckpointStore;
-import com.agentflow.ability.tool.dto.ToolDefinition;
-import com.agentflow.ability.tool.ToolRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * T4.3 AgenticLoopExecutor 验收测试。
  *
  * <p>验收依据（任务拆解 T4.3）：手写 LLM↔Tool 循环——chat → 有 toolCalls 则调注册中心 → 追加 messages →
  * 直到无 toolCalls 或超 maxIterations；断在 maxIterations 有明确报错。
- * 走 {@link StubLlmClient} 脚本化多轮，真实模型待环境（Ollama）另行验证。
+ * mock 掉客户端脚本化多轮，真实模型待环境（Ollama）另行验证。
+ *
+ * <p><b>「拼 schema 指令 / 解析结构化输出」的实现细节不在这里测</b>——那是 {@code LlmClient} 的职责
+ * （{@code SpringAiLlmClientChatStructuredTest}）。这里只验证：声明了 outputSchema 时执行器<b>调了</b>
+ * 那两个方法、并把它<b>返回的结果</b>交下去。
  */
 class AgenticLoopExecutorTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private final StubLlmClient gateway = new StubLlmClient();
+    private final LlmClient gateway = mock(LlmClient.class);
     private final ToolRegistry registry = new ToolRegistry(new ObjectMapper()); // 本测试不涉及入参校验（T5.3 另有测试）
     private final AgenticLoopExecutor executor =
-            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), new StructuredOutputParser(mapper), mapper);
+            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
+
+    /**
+     * 脚本化多轮回复：第 1 轮吐第 1 个，第 2 轮吐第 2 个……
+     */
+    private void givenDialogues(LlmChatResult first, LlmChatResult... rest) {
+        when(gateway.chatWithTools(any(), any(), any())).thenReturn(first, rest);
+    }
+
+    /** 最后一次 chatWithTools 收到的 systemPrompt。 */
+    private String lastSystemPrompt() {
+        ArgumentCaptor<String> captor = ArgumentCaptor.captor();
+        verify(gateway, atLeastOnce()).chatWithTools(captor.capture(), any(), any());
+        return captor.getValue();
+    }
+
+    /** 最后一次 chatWithTools 收到的 history。 */
+    private List<LlmChatMessage> lastHistory() {
+        ArgumentCaptor<List<LlmChatMessage>> captor = ArgumentCaptor.captor();
+        verify(gateway, atLeastOnce()).chatWithTools(any(), captor.capture(), any());
+        return captor.getValue();
+    }
+
+    /** 最后一次 chatWithTools 收到的 tools。 */
+    private List<LlmToolDefinition> lastTools() {
+        ArgumentCaptor<List<LlmToolDefinition>> captor = ArgumentCaptor.captor();
+        verify(gateway, atLeastOnce()).chatWithTools(any(), any(), captor.capture());
+        return captor.getValue();
+    }
 
     private static NodeDefinition loopNode(String systemPrompt, int maxIterations, String... tools) {
         NodeDefinition node = new NodeDefinition();
@@ -80,7 +115,7 @@ class AgenticLoopExecutorTest {
     @Test
     void loop_callsToolThenReturnsFinalAnswer() {
         registerCalc("calc");
-        gateway.setToolDialogues(
+        givenDialogues(
                 new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":2,\"b\":3}"))),
                 new LlmChatResult("答案是 5", List.of()));
 
@@ -88,7 +123,7 @@ class AgenticLoopExecutorTest {
 
         assertThat(output).isEqualTo("答案是 5");
         // 第二轮传入的历史 = assistant 工具调用轮 + tool 结果轮（含 id 配对与真实执行结果）
-        List<LlmChatMessage> history = gateway.getLastHistory();
+        List<LlmChatMessage> history = lastHistory();
         assertThat(history).hasSize(2);
         assertThat(history.get(0).getRole()).isEqualTo(LlmChatMessage.Role.ASSISTANT);
         assertThat(history.get(0).getLlmToolCalls()).hasSize(1);
@@ -102,18 +137,18 @@ class AgenticLoopExecutorTest {
     @Test
     void loop_directAnswerWithoutTools() {
         registerCalc("calc"); // 工具可用，但模型选择直接回答
-        gateway.setToolDialogues(new LlmChatResult("直接回答", List.of()));
+        givenDialogues(new LlmChatResult("直接回答", List.of()));
 
         Object output = executor.execute(loopNode("你是教练", 3, "calc"), state("x", "y"));
 
         assertThat(output).isEqualTo("直接回答");
-        assertThat(gateway.getLastHistory()).isEmpty(); // 第一轮就出答案，无历史追加
+        assertThat(lastHistory()).isEmpty(); // 第一轮就出答案，无历史追加
     }
 
     @Test
     void loop_reachesMaxIterations_throws() {
         registerCalc("calc");
-        gateway.setToolDialogues(
+        givenDialogues(
                 new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
                 new LlmChatResult(null, List.of(new LlmToolCall("call_2", "calc", "{\"a\":2,\"b\":2}"))));
 
@@ -124,7 +159,7 @@ class AgenticLoopExecutorTest {
 
     @Test
     void loop_nodeToolsUnregistered_throws() {
-        gateway.setToolDialogues(new LlmChatResult("不该走到这", List.of()));
+        givenDialogues(new LlmChatResult("不该走到这", List.of()));
 
         assertThatThrownBy(() -> executor.execute(loopNode("教练", 3, "ghost"), state("x", "y")))
                 .isInstanceOf(IllegalStateException.class)
@@ -134,7 +169,7 @@ class AgenticLoopExecutorTest {
     @Test
     void loop_modelCallsUnregisteredTool_throws() {
         registerCalc("calc");
-        gateway.setToolDialogues(new LlmChatResult(null, List.of(new LlmToolCall("call_1", "nope", "{}"))));
+        givenDialogues(new LlmChatResult(null, List.of(new LlmToolCall("call_1", "nope", "{}"))));
 
         assertThatThrownBy(() -> executor.execute(loopNode("教练", 3, "calc"), state("x", "y")))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -144,11 +179,11 @@ class AgenticLoopExecutorTest {
     @Test
     void tools_resolvedFromRegistry_withSchema() {
         registerCalc("calc");
-        gateway.setToolDialogues(new LlmChatResult("直接回答", List.of()));
+        givenDialogues(new LlmChatResult("直接回答", List.of()));
 
         executor.execute(loopNode("你是计算器", 3, "calc"), state("x", "y"));
 
-        List<LlmToolDefinition> tools = gateway.getLastTools();
+        List<LlmToolDefinition> tools = lastTools();
         assertThat(tools).hasSize(1);
         assertThat(tools.get(0).getName()).isEqualTo("calc");
         assertThat(tools.get(0).getInputSchema()).contains("\"number\"");
@@ -157,11 +192,11 @@ class AgenticLoopExecutorTest {
     @Test
     void systemPrompt_templateResolved() {
         registerCalc("calc");
-        gateway.setToolDialogues(new LlmChatResult("收到", List.of()));
+        givenDialogues(new LlmChatResult("收到", List.of()));
 
         executor.execute(loopNode("目标：{{inputs.goal}}", 3, "calc"), state("goal", "减脂"));
 
-        assertThat(gateway.getLastSystemPrompt()).isEqualTo("目标：减脂");
+        assertThat(lastSystemPrompt()).isEqualTo("目标：减脂");
     }
 
     /** 带 outputSchema 的循环节点（QA 50：声明了它，最终答案要按 JSON 解析成 Map）。 */
@@ -173,30 +208,37 @@ class AgenticLoopExecutorTest {
     }
 
     @Test
-    void outputSchema_parsesFinalAnswerToMap() throws Exception {
+    void outputSchema_appendsInstruction_andParsesFinalAnswer() throws Exception {
         registerCalc("calc");
-        gateway.setToolDialogues(
+        givenDialogues(
                 new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":2,\"b\":3}"))),
                 new LlmChatResult("{\"summary\":\"这次练得不错\",\"report\":\"## 复盘\"}", List.of()));
+        // 客户端负责拼指令与解析（细节另有测试），这里只验证执行器把两者调起来、结果交下去
+        when(gateway.appendSchemaInstruction(any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0) + "\n\n[这里是 schema 指令]");
+        when(gateway.parseStructuredOutput(any()))
+                .thenReturn(Map.of("summary", "这次练得不错", "report", "## 复盘"));
 
         Object output = executor.execute(loopNodeWithSchema("你是教练", 5,
                 "{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},"
                         + "\"report\":{\"type\":\"string\"}},\"required\":[\"summary\",\"report\"]}",
                 "calc"), state("x", "y"));
 
-        // 解析成 Map 而不是纯文本——下游模板才能取 {{...output.summary}} / {{...output.report}}
+        // 返回的是解析后的 Map 而不是纯文本——下游模板才能取 {{...output.summary}} / {{...output.report}}
         assertThat(output).isEqualTo(Map.of("summary", "这次练得不错", "report", "## 复盘"));
-        // schema 指令拼在 systemPrompt 末尾：每一轮都带（这里断言最后一轮收到的）
-        assertThat(gateway.getLastSystemPrompt())
+        // 拼好的 systemPrompt 递给了模型（每一轮都带，这里断言最后一轮收到的）
+        assertThat(lastSystemPrompt())
                 .contains("你是教练")
-                .contains("你必须只输出一个 JSON 对象")
-                .contains("summary");
+                .contains("[这里是 schema 指令]");
     }
 
     @Test
-    void outputSchema_invalidJson_throws() throws Exception {
+    void outputSchema_parseFailure_propagates() throws Exception {
         registerCalc("calc");
-        gateway.setToolDialogues(new LlmChatResult("这不是 JSON", List.of()));
+        givenDialogues(new LlmChatResult("这不是 JSON", List.of()));
+        when(gateway.appendSchemaInstruction(any(), any())).thenReturn("你是教练");
+        when(gateway.parseStructuredOutput(any()))
+                .thenThrow(new IllegalStateException("LLM 结构化输出不是合法 JSON：\n这不是 JSON"));
 
         assertThatThrownBy(() -> executor.execute(loopNodeWithSchema("你是教练", 3,
                 "{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"}},\"required\":[\"summary\"]}",
@@ -208,7 +250,7 @@ class AgenticLoopExecutorTest {
     @Test
     void endToEnd_agenticLoopInWorkflow() throws Exception {
         registerCalc("calc");
-        gateway.setToolDialogues(
+        givenDialogues(
                 new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":1,\"b\":1}"))),
                 new LlmChatResult("容量是 2", List.of()));
 

@@ -2,27 +2,34 @@ package com.agentflow.ability.tool.mcp;
 
 import java.util.List;
 
-import com.agentflow.ability.llm.dto.LlmToolCall;
-import com.agentflow.ability.memory.TestTemplateContext;
+import com.agentflow.ability.llm.LlmClient;
+import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.ability.llm.dto.LlmChatResult;
-import com.agentflow.ability.llm.StubLlmClient;
-import com.agentflow.ability.llm.StructuredOutputParser;
-import com.agentflow.engine.template.TemplateResolver;
-import com.agentflow.engine.node.AgenticLoopExecutor;
+import com.agentflow.ability.llm.dto.LlmToolCall;
+import com.agentflow.ability.llm.dto.LlmToolDefinition;
+import com.agentflow.ability.memory.TestTemplateContext;
+import com.agentflow.ability.tool.ToolRegistry;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
 import com.agentflow.engine.model.state.WorkflowState;
-import com.agentflow.ability.tool.ToolRegistry;
+import com.agentflow.engine.node.AgenticLoopExecutor;
+import com.agentflow.engine.template.TemplateResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * T5.5 验收测试——MCP 暴露的工具能被 {@code AGENTIC_LOOP} 调用（chat → mcp tool → 回答案）。
  *
- * <p>连本地 demo MCP server（calc 工具）→ 注册进注册中心 → 手写 loop 脚本化
+ * <p>连本地 demo MCP server（calc 工具）→ 注册进注册中心 → mock 掉客户端脚本化
  * "第一轮要求调 demo_calc → 第二轮给最终答案"，验证模型经注册中心真调远端工具。
  */
 class McpAgenticLoopTest {
@@ -36,20 +43,23 @@ class McpAgenticLoopTest {
                 registry.register(adapter.adapt(tool));
             }
 
-            StubLlmClient gateway = new StubLlmClient();
-            gateway.setToolDialogues(
+            LlmClient gateway = mock(LlmClient.class);
+            when(gateway.chatWithTools(any(), any(), any())).thenReturn(
                     new LlmChatResult(null, List.of(new LlmToolCall("call_1", "demo_calc", "{\"op\":\"mul\",\"a\":6,\"b\":7}"))),
                     new LlmChatResult("6×7=42", List.of()));
 
             AgenticLoopExecutor loop = new AgenticLoopExecutor(gateway, registry,
-                    new TemplateResolver(), TestTemplateContext.withoutMemory(),
-                    new StructuredOutputParser(new ObjectMapper()), new ObjectMapper());
+                    new TemplateResolver(), TestTemplateContext.withoutMemory(), new ObjectMapper());
 
             Object output = loop.execute(loopNode("计算 6×7，用 demo_calc", 5, "demo_calc"),
                     state("goal", "算一下"));
 
             assertThat(output).isEqualTo("6×7=42");
-            assertThat(gateway.getLastTools()).anyMatch(t -> t.getName().equals("demo_calc"));
+
+            // 每次调用的第三个参数是本轮可用工具：摘出最后一次，确认 demo_calc 确实递给了模型
+            ArgumentCaptor<List<LlmToolDefinition>> tools = ArgumentCaptor.captor();
+            verify(gateway, atLeastOnce()).chatWithTools(any(), any(), tools.capture());
+            assertThat(tools.getValue()).anyMatch(t -> t.getName().equals("demo_calc"));
         }
     }
 
