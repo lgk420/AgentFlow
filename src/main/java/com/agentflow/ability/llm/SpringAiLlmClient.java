@@ -42,6 +42,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class SpringAiLlmClient implements LlmClient {
 
+    /**
+     * 追加在业务 prompt 之后的 schema 指令（{@link #appendSchemaInstruction}）。
+     */
+    private static final String SCHEMA_INSTRUCTION = "你必须只输出一个 JSON 对象，符合以下 schema。直接输出 JSON，不要用 markdown 代码块（不要 ```json 围栏）：\n";
+
     private final ChatModel chatModel;
     private final ObjectMapper mapper;
     private final LlmTracer llmTracer;
@@ -77,10 +82,18 @@ public class SpringAiLlmClient implements LlmClient {
 
     @Override
     public Map<String, Object> chatStructured(String prompt, JsonNode schema) {
-        String fullPrompt = prompt
-                + "\n\n你必须只输出一个 JSON 对象，符合以下 schema。直接输出 JSON，"
-                + "不要用 markdown 代码块（不要 ```json 围栏）：\n" + schema;
-        String text = this.chat(null, fullPrompt);
+        return parseStructuredOutput(this.chat(null, appendSchemaInstruction(prompt, schema)));
+    }
+
+    @Override
+    public String appendSchemaInstruction(String prompt, JsonNode schema) {
+        String instruction = SCHEMA_INSTRUCTION + schema;
+        return (prompt == null || prompt.isBlank()) ? instruction : prompt + "\n\n" + instruction;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> parseStructuredOutput(String text) {
         try {
             return mapper.readValue(stripCodeFence(text), Map.class);
         } catch (JsonProcessingException e) {

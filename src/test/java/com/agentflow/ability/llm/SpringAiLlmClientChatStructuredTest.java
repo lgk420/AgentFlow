@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
  * SpringAiLlmClient#chatStructured 的行为测试（T4.2 / T4.4，QA 47）。
  *
  * <p>这三条以前在 {@code LlmNodeExecutorTest} 里**绕 Stub 客户端**验证——当时逻辑在共享的
- * {@code LlmStructuredChat}，桩只实现 {@code chat()}，所以真逻辑能被间接测到。
+ * {@code StructuredOutputParser}，桩只实现 {@code chat()}，所以真逻辑能被间接测到。
  * 逻辑并入客户端后（`chatStructured` 成了接口的抽象方法），再绕桩验证就变成"测桩自己"了，
  * 于是<b>改为直接测真实现</b>：mock 一个 {@link ChatModel} 喂回预置文本，
  * 断言拼进去的 prompt 与解析结果。

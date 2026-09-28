@@ -85,15 +85,6 @@ class TemplateResolverTest {
     }
 
     @Test
-    void resolve_memory_throwsNotImplemented() {
-        Map<String, Object> context = ctx(Map.of(), null);
-        assertThatThrownBy(() -> resolver.resolve("{{memory.customer.profile}}", context))
-                .isInstanceOf(TemplateResolutionException.class)
-                .hasMessageContaining("memory")
-                .hasMessageContaining("未实现");
-    }
-
-    @Test
     void resolve_invalidDefaultLiteral_throws() {
         Map<String, Object> context = ctx(Map.of(), null);
         assertThatThrownBy(() -> resolver.resolve("{{inputs.x | CN}}", context))

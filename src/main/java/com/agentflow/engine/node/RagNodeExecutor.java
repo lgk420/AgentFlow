@@ -2,6 +2,7 @@ package com.agentflow.engine.node;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.agentflow.ability.rag.rerank.RagReranker;
 import com.agentflow.engine.template.TemplateContextFactory;
@@ -20,7 +21,11 @@ import org.springframework.stereotype.Component;
  * RAG 节点执行器（T6.3 检索，T6.7 重排，T6.8 阈值/拒答）——检索向量库，产出上下文 chunks 写 state。
  *
  * <p>流程：query 模板解析 → <b>召回</b>（{@link RagRetriever}）→ 可选<b>重排</b>（{@link RagReranker}）
- * → <b>相似度阈值过滤</b> → 返回 {@code {chunks: [...], hit: 布尔}}。
+ * → <b>相似度阈值过滤</b> → 返回 {@code {chunks: [...], hit: 布尔, chunksText: 字符串}}。
+ *
+ * <p><b>为什么同时给 chunks 和 chunksText</b>：同 {@code memory.history} 与 {@code memory.historyText}——
+ * 结构化那份给需要按字段取值的场景，文本那份给<b>要整段喂进 prompt</b> 的场景。
+ * 后者直接拼 {@code content}，省得模型去解一层 JSON 的括号和字段名（那是白付的 token）。
  *
  * <p><b>两阶段与召回放大（T6.7）</b>：向量检索是 bi-encoder，快但"排不准"；重排是 cross-encoder，
  * 准但只能作用在少量候选上。因此启用重排时会先把召回放大到 {@code rerank.recall-k}，
@@ -89,7 +94,23 @@ public class RagNodeExecutor implements NodeExecutor {
         }
 
         List<RagChunk> hits = filterByMinScore(chunks, reranked);
-        return Map.of("chunks", hits, "hit", !hits.isEmpty());
+        return Map.of(
+                "chunks", hits,
+                "hit", !hits.isEmpty(),
+                "chunksText", renderChunksText(hits));
+    }
+
+    /**
+     * chunks → prompt 友好的纯文本（每块正文之间空一行）。
+     *
+     * <p>只取 {@code content}，不带 {@code score} / {@code metadata}：分数是给排序用的、模型看它没意义
+     * （列表顺序已经表达了相关性）；metadata 本来就在 content 里——灌库时写进正文开头的那几行标签
+     * （{@code 肌群: / 模块: / 动作:}）就是它。空结果自然是空串。
+     */
+    private static String renderChunksText(List<RagChunk> chunks) {
+        return chunks.stream()
+                .map(RagChunk::getContent)
+                .collect(Collectors.joining("\n\n"));
     }
 
     /**

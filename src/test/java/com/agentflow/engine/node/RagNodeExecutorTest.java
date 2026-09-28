@@ -93,8 +93,8 @@ class RagNodeExecutorTest {
         assertThat(output).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> out = (Map<String, Object>) output;
-        // hit 是 T6.8 加的：DSL 条件边靠它判"要不要走拒答分支"
-        assertThat(out).containsOnlyKeys("chunks", "hit");
+        // hit 是 T6.8 加的：DSL 条件边靠它判"要不要走拒答分支"；chunksText 是给"整段喂 prompt"用的
+        assertThat(out).containsOnlyKeys("chunks", "hit", "chunksText");
         assertThat(out.get("hit")).isEqualTo(true);
     }
 

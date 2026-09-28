@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * （各带 label/description 作为候选），让模型基于上游输出选一条，返回目标节点 id。
  *
  * <p>流程：候选边 → 拼 prompt（候选 to/label/描述 + 上游输出）→ 结构化输出 {@code {nextNode}}
- * （{@link LlmStructuredChat}，QA 47）→ 校验落在候选集；非法（模型幻觉）→ <b>fallback 走声明顺序第一条</b>。
+ * （{@link com.agentflow.ability.llm.LlmClient#chatStructured}，QA 47）→ 校验落在候选集；非法（模型幻觉）→ <b>fallback 走声明顺序第一条</b>。
  *
  * <p>调用方（{@link com.agentflow.engine.scheduler.WorkflowExecutor}）拿到目标后：选中边触发、其余候选边传播死分支
  * （死分支机制 T2.4 复用）。

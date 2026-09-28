@@ -13,6 +13,7 @@ import com.agentflow.engine.template.TemplateContextFactory;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
+import com.agentflow.engine.model.definition.OutputSchema;
 import com.agentflow.engine.model.state.WorkflowState;
 import com.agentflow.ability.tool.dto.ToolDefinition;
 import com.agentflow.ability.tool.ToolRegistry;
@@ -33,7 +34,12 @@ import org.springframework.stereotype.Component;
  * 直到模型直接给出答案或达到 maxIterations（超限抛错 → 节点 FAILED）。
  *
  * <p>工具定义来自注册中心按 {@code node.tools} 查询（一套 schema 两个用途，QA 49 修订①）；
- * 参数 JSON Schema 校验（T5.3）后续接。outputSchema 暂不处理（QA 50）。
+ * 入参 JSON Schema 校验由 {@link ToolRegistry#invoke} 负责（T5.3）。
+ *
+ * <p><b>outputSchema（QA 50 里"延后"的那件事，现已接上）</b>：声明了它 →
+ * ① schema 指令拼到 systemPrompt 末尾；② 最终答案按 JSON 解析成 Map 返回（而不是纯文本）。
+ * <b>不是"循环完再调一次 LLM 转格式"</b>——那多一次调用；循环的最后一轮本来就是模型的最终作答，
+ * 让它直接按 JSON 答即可。没声明 outputSchema 则原样返回文本（行为与之前完全一致）。
  */
 @Component
 public class AgenticLoopExecutor implements NodeExecutor {
@@ -63,6 +69,11 @@ public class AgenticLoopExecutor implements NodeExecutor {
     public Object execute(NodeDefinition node, WorkflowState state) {
         String systemPrompt = node.getSystemPrompt() == null ? null
                 : templateResolver.resolve(node.getSystemPrompt(), templateContextFactory.contextFor(state));
+        OutputSchema outputSchema = node.getOutputSchema();
+        if (outputSchema != null) {
+            // schema 指令拼在 systemPrompt 末尾：下面每一轮都会带上它，最后一轮模型才会按 JSON 作答
+            systemPrompt = llmClient.appendSchemaInstruction(systemPrompt, outputSchema.getSchema());
+        }
         List<LlmToolDefinition> tools = resolveTools(node);
         List<LlmChatMessage> history = new ArrayList<>();
         int maxIterations = node.getMaxIterations();
@@ -70,7 +81,10 @@ public class AgenticLoopExecutor implements NodeExecutor {
         for (int i = 0; i < maxIterations; i++) {
             LlmChatResult result = llmClient.chatWithTools(systemPrompt, history, tools);
             if (!result.wantsTools()) {
-                return result.getText(); // 模型给出最终答案
+                // 模型给出最终答案；声明了 outputSchema 就解析成 Map，否则原样返回文本
+                return outputSchema == null
+                        ? result.getText()
+                        : llmClient.parseStructuredOutput(result.getText());
             }
             // 先追加整轮 assistant 工具调用，再逐条追加 tool 结果（OpenAI 兼容 API 要求 tool_calls 在 tool 结果之前）
             history.add(LlmChatMessage.assistant(result.getText(), result.getToolCalls()));

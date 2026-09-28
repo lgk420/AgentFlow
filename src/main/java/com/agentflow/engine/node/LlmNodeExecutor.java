@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
  * <p>流程：模板解析 prompt（{@code {{inputs.x}}} / {@code {{nodes.y.output.z}}} / {@code {{memory.*}}}）
  * → 调 {@link LlmClient}。
  * 有 {@code outputSchema} 走结构化输出（QA 47：prompt 附 schema 指令 + Jackson 解析 JSON → Map，
- * 逻辑在 {@link LlmStructuredChat}，与 LlmRouter 共用），无则返回纯文本。
+ * 逻辑在 {@code LlmClient#chatStructured}，与 LlmRouter、AgenticLoop 共用），
+ * 无则返回纯文本。
  * system 传 null（LLM 节点只有 prompt，角色内联其中，见 QA 48）。
  *
  * <p>T10.2：模板上下文改由 {@link TemplateContextFactory} 统一拼装（原先每个执行器各有一份

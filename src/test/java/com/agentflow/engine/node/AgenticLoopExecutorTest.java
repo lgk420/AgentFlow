@@ -11,12 +11,14 @@ import com.agentflow.ability.memory.TestTemplateContext;
 import com.agentflow.ability.llm.dto.LlmChatMessage;
 import com.agentflow.ability.llm.dto.LlmChatResult;
 import com.agentflow.ability.llm.StubLlmClient;
+import com.agentflow.ability.llm.StructuredOutputParser;
 import com.agentflow.ability.llm.dto.LlmToolCall;
 import com.agentflow.ability.llm.dto.LlmToolDefinition;
 import com.agentflow.engine.parse.GraphParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.model.definition.NodeDefinition;
 import com.agentflow.engine.model.definition.NodeType;
+import com.agentflow.engine.model.definition.OutputSchema;
 import com.agentflow.engine.model.definition.WorkflowDefinition;
 import com.agentflow.engine.scheduler.ConditionEvaluator;
 import com.agentflow.engine.model.state.RunStatus;
@@ -45,7 +47,7 @@ class AgenticLoopExecutorTest {
     private final StubLlmClient gateway = new StubLlmClient();
     private final ToolRegistry registry = new ToolRegistry(new ObjectMapper()); // 本测试不涉及入参校验（T5.3 另有测试）
     private final AgenticLoopExecutor executor =
-            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), mapper);
+            new AgenticLoopExecutor(gateway, registry, new TemplateResolver(), TestTemplateContext.withoutMemory(), new StructuredOutputParser(mapper), mapper);
 
     private static NodeDefinition loopNode(String systemPrompt, int maxIterations, String... tools) {
         NodeDefinition node = new NodeDefinition();
@@ -160,6 +162,47 @@ class AgenticLoopExecutorTest {
         executor.execute(loopNode("目标：{{inputs.goal}}", 3, "calc"), state("goal", "减脂"));
 
         assertThat(gateway.getLastSystemPrompt()).isEqualTo("目标：减脂");
+    }
+
+    /** 带 outputSchema 的循环节点（QA 50：声明了它，最终答案要按 JSON 解析成 Map）。 */
+    private NodeDefinition loopNodeWithSchema(String systemPrompt, int maxIterations, String schemaJson, String... tools)
+            throws Exception {
+        NodeDefinition node = loopNode(systemPrompt, maxIterations, tools);
+        node.setOutputSchema(new OutputSchema(mapper.readTree(schemaJson)));
+        return node;
+    }
+
+    @Test
+    void outputSchema_parsesFinalAnswerToMap() throws Exception {
+        registerCalc("calc");
+        gateway.setToolDialogues(
+                new LlmChatResult(null, List.of(new LlmToolCall("call_1", "calc", "{\"a\":2,\"b\":3}"))),
+                new LlmChatResult("{\"summary\":\"这次练得不错\",\"report\":\"## 复盘\"}", List.of()));
+
+        Object output = executor.execute(loopNodeWithSchema("你是教练", 5,
+                "{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},"
+                        + "\"report\":{\"type\":\"string\"}},\"required\":[\"summary\",\"report\"]}",
+                "calc"), state("x", "y"));
+
+        // 解析成 Map 而不是纯文本——下游模板才能取 {{...output.summary}} / {{...output.report}}
+        assertThat(output).isEqualTo(Map.of("summary", "这次练得不错", "report", "## 复盘"));
+        // schema 指令拼在 systemPrompt 末尾：每一轮都带（这里断言最后一轮收到的）
+        assertThat(gateway.getLastSystemPrompt())
+                .contains("你是教练")
+                .contains("你必须只输出一个 JSON 对象")
+                .contains("summary");
+    }
+
+    @Test
+    void outputSchema_invalidJson_throws() throws Exception {
+        registerCalc("calc");
+        gateway.setToolDialogues(new LlmChatResult("这不是 JSON", List.of()));
+
+        assertThatThrownBy(() -> executor.execute(loopNodeWithSchema("你是教练", 3,
+                "{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"}},\"required\":[\"summary\"]}",
+                "calc"), state("x", "y")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("不是合法 JSON");
     }
 
     @Test

@@ -36,7 +36,8 @@ class SpringAiLlmClientTraceTest {
 
     private final ChatModel chatModel = mock(ChatModel.class);
     private final RecordingLlmTracer tracer = new RecordingLlmTracer();
-    private final SpringAiLlmClient gateway = new SpringAiLlmClient(chatModel, new ObjectMapper(), tracer);
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final SpringAiLlmClient gateway = new SpringAiLlmClient(chatModel, mapper, tracer);
 
     @Test
     void chat_recordsTrace_withModelTokensInputOutput() {

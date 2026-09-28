@@ -6,6 +6,7 @@ import com.agentflow.ability.llm.dto.LlmToolCall;
 import com.agentflow.ability.memory.TestTemplateContext;
 import com.agentflow.ability.llm.dto.LlmChatResult;
 import com.agentflow.ability.llm.StubLlmClient;
+import com.agentflow.ability.llm.StructuredOutputParser;
 import com.agentflow.engine.template.TemplateResolver;
 import com.agentflow.engine.node.AgenticLoopExecutor;
 import com.agentflow.engine.model.definition.NodeDefinition;
@@ -41,7 +42,8 @@ class McpAgenticLoopTest {
                     new LlmChatResult("6×7=42", List.of()));
 
             AgenticLoopExecutor loop = new AgenticLoopExecutor(gateway, registry,
-                    new TemplateResolver(), TestTemplateContext.withoutMemory(), new ObjectMapper());
+                    new TemplateResolver(), TestTemplateContext.withoutMemory(),
+                    new StructuredOutputParser(new ObjectMapper()), new ObjectMapper());
 
             Object output = loop.execute(loopNode("计算 6×7，用 demo_calc", 5, "demo_calc"),
                     state("goal", "算一下"));
