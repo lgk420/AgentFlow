@@ -78,18 +78,21 @@ public class FitnessTools {
      * @param weeks  历史窗口；不传取 {@value #DEFAULT_WEEKS}
      */
     @ToolMethod(name = "training_log_memory",
-            description = "记录本次训练日志，并返回该用户近 N 周的全部训练记录")
+            description = "记录本次训练日志，并返回该用户截至本次的近 N 周训练记录")
     @SuppressWarnings("unchecked")
     public Map<String, Object> trainingLogMemory(Map<String, Object> log, String userId, Integer weeks) {
-        store(log, userId);
-        return historyForUser(userId, weeks != null ? weeks : DEFAULT_WEEKS, LocalDate.now());
+        String date = store(log, userId);
+        // 窗口锚在**这次训练那天**，不是「现在」——补录旧日志时，它自己必须落在窗口里
+        return historyForUser(userId, weeks != null ? weeks : DEFAULT_WEEKS,
+                LocalDate.parse(date, DATE_FMT));
     }
 
     /**
-     * 写入 + 校验。校验不过抛异常——宁可这次失败，也不要脏数据进库（它会污染之后所有的环比与轮换判断）。
+     * 写入 + 校验，返回归一化后的训练日期（调用方拿它锚定历史窗口）。
+     *
+     * <p>校验不过抛异常——宁可这次失败，也不要脏数据进库（它会污染之后所有的环比与轮换判断）。
      */
-    @SuppressWarnings("unchecked")
-    private void store(Map<String, Object> log, String userId) {
+    private String store(Map<String, Object> log, String userId) {
         String date = getString(log, "date");
         String primaryMuscleGroup = getString(log, "primaryMuscleGroup");
         if (!DATE_PATTERN.matcher(date).matches()) {
@@ -107,17 +110,22 @@ public class FitnessTools {
         redis.opsForHash().putAll("log:" + userId + ":" + date, fields);
 
         redis.opsForZSet().add("history:" + userId, date, toDateNum(date));
+        return date;
     }
 
     /**
-     * 读回近 N 周记录，返回 {@code {history: [...]}}（日期降序）。
+     * 读回**截至 asOf（含）**的最近 N 周记录，返回 {@code {history: [...]}}（日期降序）。
      *
-     * <p>内部入口：today 由调用方给，测试才能确定性（不用 {@link LocalDate#now()}）。
+     * <p><b>上界也得封在 asOf</b>：不封顶的话，日期排在本次之后的记录也会被拉进来，
+     * 那样 {@code history[0]} 就不是本次了——而「第 0 条即本次」是整套约定的地基
+     * （{@link #trainingMetrics} 的环比基准、plan 节点数「最近两次」都靠它）。
+     *
+     * <p>内部入口：asOf 由调用方给，测试才能确定性。
      */
     @SuppressWarnings("unchecked")
-    public Map<String, Object> historyForUser(String userId, int weeks, LocalDate today) {
+    public Map<String, Object> historyForUser(String userId, int weeks, LocalDate asOf) {
         List<Map<String, Object>> history =
-                loadRange(userId, toDateNum(today.minusWeeks(weeks)), weeks * 7);
+                loadRange(userId, toDateNum(asOf.minusWeeks(weeks)), toDateNum(asOf), weeks * 7);
         return Map.of("history", history);
     }
 
@@ -139,11 +147,11 @@ public class FitnessTools {
     }
 
     /**
-     * 取 [cutoff, +∞) 内最近 maxCount 条（日期降序）。
+     * 取 {@code [cutoff, maxDate]} 内最近 maxCount 条（日期降序）。上下界都是 {@code YYYYMMDD} 数值，含端点。
      */
-    private List<Map<String, Object>> loadRange(String userId, long cutoff, int maxCount) {
+    private List<Map<String, Object>> loadRange(String userId, long cutoff, long maxDate, int maxCount) {
         Set<String> dates = redis.opsForZSet()
-                .reverseRangeByScore("history:" + userId, cutoff, Double.MAX_VALUE, 0, maxCount);
+                .reverseRangeByScore("history:" + userId, cutoff, maxDate, 0, maxCount);
         List<Map<String, Object>> result = new ArrayList<>();
         if (dates == null) {
             return result;

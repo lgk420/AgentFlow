@@ -123,6 +123,22 @@ class TrainingLogMemoryToolTest {
     }
 
     @Test
+    void window_upperBoundIsAsOf_excludesLaterSessions() {
+        tools.trainingLogMemory(log("20260808", "胸"), "u", null);
+        tools.trainingLogMemory(log("20260812", "背"), "u", null);
+
+        // 锚在 20260808：只该看到它自己，看不到之后那次——否则 history[0] 就不是「本次」了
+        List<Map<String, Object>> at0808 = historyOf(tools.historyForUser("u", 4, LocalDate.of(2026, 8, 8)));
+        assertThat(at0808).hasSize(1);
+        assertThat(at0808.get(0).get("date")).isEqualTo("20260808");
+
+        // 锚在 20260812：两条都在，第 0 条是它自己
+        List<Map<String, Object>> at0812 = historyOf(tools.historyForUser("u", 4, LocalDate.of(2026, 8, 12)));
+        assertThat(at0812).hasSize(2);
+        assertThat(at0812.get(0).get("date")).isEqualTo("20260812");
+    }
+
+    @Test
     void emptyHistory_returnsEmptyList() {
         assertThat(historyOf(tools.historyForUser("u", 4, TODAY))).isEmpty();
     }
