@@ -11,8 +11,13 @@
   跑之前先起应用、注册工作流：
     curl -X POST localhost:8080/api/v1/workflows \
       -H "Content-Type: application/json" \
-      --data @src/test/resources/testdata/workflows/fitness-coach-chat/fitness-coach-chat.json
+      --data @src/test/resources/testdata/workflows/fitness-coach/fitness-coach.json
   然后打开 http://localhost:8080
+
+  两个身份维度都发给后端，缺省时由 DSL 的默认值兜底：
+    userId    —— 训练日志的稳定身份（存 localStorage，默认 default-user；「新会话」不动它）
+    sessionId —— 对话记忆的会话标识（UUID，「新会话」才换一个）
+  前端可随意填，服务端不校验——**仅演示用，没有鉴权**。
 -->
 <style>
   * { box-sizing: border-box; }
@@ -52,6 +57,7 @@
 <header>
   <h1>健身教练助手</h1>
   <span class="sid" id="sidLabel"></span>
+  <span class="sid" id="userLabel"></span>
   <button id="resetBtn" title="清空本地会话，下次发送开启新会话">新会话</button>
 </header>
 
@@ -72,17 +78,29 @@ if (!sessionId) {
   sessionId = crypto.randomUUID();
   localStorage.setItem(SESSION_KEY, sessionId);
 }
-document.getElementById('sidLabel').textContent = sessionId.slice(0, 8);
+document.getElementById('sidLabel').textContent = '会话 ' + sessionId.slice(0, 8);
 
+// ── 用户标识：训练日志的稳定身份，跟 sessionId 是两码事 ────────────────────
+// 换了 sessionId 只是「开个新会话」，换了 userId 才是「换了个人」——训练记录按它分账。
+const USER_KEY = 'agentflow.userId';
+let userId = localStorage.getItem(USER_KEY) || 'default-user';
+localStorage.setItem(USER_KEY, userId);
+document.getElementById('userLabel').textContent = '用户 ' + userId;
+
+// 「新会话」只换 sessionId，不动 userId：对话记忆断了，训练记录还在
 document.getElementById('resetBtn').onclick = () => {
   localStorage.removeItem(SESSION_KEY);
   location.reload();
 };
 
-const WORKFLOW_ID = 'fitness-coach-chat';
-// 这两个节点的输出就是「助手的回复」——对话工作流的两条分支各有一个。
-// （通用做法应由引擎暴露「工作流输出」，这里按演示需要写死。）
-const REPLY_NODES = ['coach', 'answer'];
+const WORKFLOW_ID = 'fitness-coach';
+// 两条分支的终点节点，各自装着这一轮的回复。取值方式不同：
+//   聊天分支的输出就是字符串；
+//   日志分支的输出是 {summary, report} 对象——气泡里要的是 report（summary 另有用途，见下）
+const REPLY_NODES = [
+  { node: 'agent_review_advice_node', field: 'report' },
+  { node: 'agent_chat_node', field: null },
+];
 
 const log = document.getElementById('log');
 const progressEl = document.getElementById('progress');
@@ -120,7 +138,7 @@ async function send() {
         workflowId: WORKFLOW_ID,
         sessionId: sessionId,
         wait: false,                    // 立刻返回 runId，随后用 SSE 看进度
-        inputs: { userMessage: text }
+        inputs: { userMessage: text, userId: userId }
       })
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -177,9 +195,12 @@ async function showResult(runId, progress) {
 
 /** 两条分支只有一条会执行，取存在的那条的输出。 */
 function pickReply(nodeOutputs) {
-  for (const id of REPLY_NODES) {
-    const out = nodeOutputs[id] && nodeOutputs[id].output;
-    if (out) return typeof out === 'string' ? out : JSON.stringify(out);
+  for (const { node, field } of REPLY_NODES) {
+    const entry = nodeOutputs[node];
+    if (!entry || entry.output == null) continue;
+    const out = field ? entry.output[field] : entry.output;
+    if (out == null) continue;
+    return typeof out === 'string' ? out : JSON.stringify(out);
   }
   return null;
 }
