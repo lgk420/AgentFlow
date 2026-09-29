@@ -8,7 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
+import com.agentflow.ability.rag.dto.RagChunk;
+import com.agentflow.ability.rag.retrieval.RagRetriever;
 import com.agentflow.ability.tool.annotation.ToolMethod;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,10 +19,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 健身教练助手的工具集（T5.4）——**一个场景一个类**：2 个工具 + 共享计算。
+ * 健身教练助手的工具集（T5.4）——**一个场景一个类**：3 个工具 + 共享计算。
  *
- * <p>工具链：{@link #trainingLogMemory}（存本次 + 读回全部）→ {@link #trainingMetrics}（算指标），
+ * <p>前两个是一条链：{@link #trainingLogMemory}（存本次 + 读回全部）→ {@link #trainingMetrics}（算指标），
  * 共用同一份 Redis 键约定（见 {@link #trainingLogMemory}）与同一套计算（见类末的静态方法）。
+ * 第三个 {@link #knowledgeSearch} 走知识库，跟存储无关。
  * 它们靠 {@link ToolMethod#name()} 区分工具名，Java 方法名只给本类看。
  */
 @Component
@@ -38,6 +42,21 @@ public class FitnessTools {
      */
     private static final int DEFAULT_WEEKS = 6;
 
+    /**
+     * 知识库 collection 名（与灌库 API 用的名字一致）。
+     */
+    private static final String KNOWLEDGE_COLLECTION = "workout_kb";
+
+    /**
+     * {@link #knowledgeSearch} 不传 topK 时的条数。
+     */
+    private static final int DEFAULT_TOP_K = 3;
+
+    /**
+     * {@link #knowledgeSearch} 一条没命中时返回的话——让模型知道"没查到"，而不是拿到空串自己编。
+     */
+    private static final String NO_KNOWLEDGE_HIT = "（知识库里没有相关内容）";
+
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
 
     /**
@@ -52,10 +71,12 @@ public class FitnessTools {
     private static final double COMFORT_ZONE_RANGE = 2.0;
 
     private final StringRedisTemplate redis;
+    private final RagRetriever ragRetriever;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public FitnessTools(StringRedisTemplate redis) {
+    public FitnessTools(StringRedisTemplate redis, RagRetriever ragRetriever) {
         this.redis = redis;
+        this.ragRetriever = ragRetriever;
     }
 
     // ═══════════════════ 工具 1：训练日志存取 ═══════════════════
@@ -300,6 +321,35 @@ public class FitnessTools {
             return false;
         }
         return n.doubleValue() < COMFORT_ZONE_CV_THRESHOLD && Math.abs(changePct) <= COMFORT_ZONE_RANGE;
+    }
+
+    // ═══════════════════ 工具 3：知识检索 ═══════════════════
+
+    /**
+     * 检索健身知识库，返回拼好的纯文本；一条没命中就明确说"没有"。
+     *
+     * <p><b>为什么得是工具</b>：知识检索在图里是 RAG 节点，但节点只在**固定那一刻、按写死的 query** 查一次；
+     * 而「这个动作怎么练」「器材被占了换什么」要由模型**按用户当场问的**决定查什么——所以得有工具。
+     *
+     * <p><b>为什么返回文本而不是 chunks</b>：同 {@code chunksText}——整段喂给模型时，没必要让它再解一层 JSON。
+     *
+     * <p>query 怎么给：查某个动作用**动作名**（库里每块都带 {@code 动作: xxx} 标签）；要一批候选动作
+     * （比如挑替代）用**肌群名**；「该加多少重量」去查「渐进超负荷」。
+     *
+     * @param query 检索词
+     * @param topK  取前几条；不传取 {@value #DEFAULT_TOP_K}
+     */
+    @ToolMethod(name = "knowledge_search",
+            description = "检索健身知识库（动作要领 / 渐进超负荷 / 肌群轮换 / 大带小）。"
+                    + "查单个动作怎么做就用动作名，要一批候选动作就用肌群名。"
+                    + "知识库里没有的会明确说没有——如实告诉用户，不要自己编。")
+    public String knowledgeSearch(String query, Integer topK) {
+        List<RagChunk> chunks = ragRetriever.retrieve(query,
+                topK != null ? topK : DEFAULT_TOP_K, KNOWLEDGE_COLLECTION);
+        if (chunks.isEmpty()) {
+            return NO_KNOWLEDGE_HIT;
+        }
+        return chunks.stream().map(RagChunk::getContent).collect(Collectors.joining("\n\n"));
     }
 
     // ═══════════════════ 共享计算 ═══════════════════

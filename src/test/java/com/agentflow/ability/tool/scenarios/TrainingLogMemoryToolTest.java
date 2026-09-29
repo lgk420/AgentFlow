@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * history 每条的<b>形状</b>（容量/CV 算得出来，但明细 {@code actions} 不返回——省 prompt token）、
  * 空历史返回空列表、非法 date / 主练部位拒绝入库。
  *
- * <p>窗口类用例固定注入 today 保证确定性；涉及 {@code trainingLogMemory} 自身读回的用例
- * 用<b>相对今天</b>的日期（它内部取 {@code LocalDate.now()}，签名里没有 today）。
+ * <p>窗口类用例固定注入 asOf 保证确定性；涉及 {@code trainingLogMemory} 自身读回的用例
+ * 用<b>相对今天</b>的日期（窗口锚在日志里的 date，所以那类用例得让日期落在近期）。
  */
 @Testcontainers
 class TrainingLogMemoryToolTest {
@@ -56,7 +56,7 @@ class TrainingLogMemoryToolTest {
             connection.flushDb();
             return null;
         });
-        tools = new FitnessTools(template);
+        tools = new FitnessTools(template, null);
     }
 
     /** 一条最小可用的日志：日期 + 主练部位 + 一个小肌群 + 一个动作（4 组 15kg×12）。 */

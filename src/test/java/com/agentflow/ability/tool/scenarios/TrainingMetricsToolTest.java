@@ -25,7 +25,7 @@ class TrainingMetricsToolTest {
     /**
      * redis 传 null——本测试只调 training_metrics，那条路径不碰存储。
      */
-    private final FitnessTools tool = new FitnessTools(null);
+    private final FitnessTools tool = new FitnessTools(null, null);
 
     /** 本次练的部位。 */
     private static final String GROUP = "腿";

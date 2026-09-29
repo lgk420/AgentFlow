@@ -1,7 +1,7 @@
 {
   "id": "fitness-coach",
   "name": "健身教练助手",
-  "version": 4,
+  "version": 5,
   "nodes": {
     "start": { "type": "START" },
 
@@ -148,8 +148,8 @@
 
     "agent_chat_node": {
       "type": "AGENTIC_LOOP",
-      "systemPrompt": "你是健身教练助手。\n\n之前的对话（为空说明这是第一次）：\n{{memory.historyText | '（无）'}}\n\n用户现在说：{{inputs.userMessage}}\n\n你现在只能依据上面的对话回答，拿不到用户的训练记录和指标；问到这些时如实说明，不要编造。",
-      "tools": [],
+      "systemPrompt": "你是健身教练助手。\n\n之前的对话（为空说明这是第一次）：\n{{memory.historyText | '（无）'}}\n\n用户现在说：{{inputs.userMessage}}\n\n问到动作怎么做、该加多少重量、某个肌群有哪些动作这类健身知识时，先用 knowledge_search 查再答；知识库里没有的就如实说没有，不要编。\n用户的训练记录和指标现在还查不到（那个工具还没接），问到就说明这一点。",
+      "tools": ["knowledge_search"],
       "maxIterations": 4
     },
 
