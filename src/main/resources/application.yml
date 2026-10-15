@@ -79,6 +79,13 @@ core:
   event-driven:
     # T7.5：进程级处理失败的重投次数上限，超限进死信（agentflow:dlq）
     max-retries: 3
+    # 节点执行线程池：执行以等 LLM/HTTP 为主（IO 密集），与核数无关。
+    # 真正的天花板是下游能放多少并发（provider 限流、Redis 连接池），所以这个值只能压测调——
+    # 给太大只会让请求在 provider 那边排队超时。
+    worker-threads: 16
+    # 队列容量：必须有界。无界队列会让「满了让读线程自己跑」的背压彻底失效，
+    # 读得比处理快 → 任务在内存和 PEL 里一起堆积 → OOM。
+    worker-queue: 64
 
 # T6.7：RAG 两阶段检索的重排配置。
 # 为什么必须独立服务：Ollama 只有「生成」「嵌入」两条推理路径，没有 rerank 端点——

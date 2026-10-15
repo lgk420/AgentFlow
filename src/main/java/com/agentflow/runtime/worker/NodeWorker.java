@@ -8,7 +8,13 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import jakarta.annotation.PreDestroy;
 import com.agentflow.engine.scheduler.GraphRuntime;
 import com.agentflow.engine.node.NodeExecutor;
 import com.agentflow.engine.scheduler.RetryPolicy;
@@ -44,6 +50,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>失败不 ACK（留在 PEL 重投，at-least-once）；节点已执行/已死则跳过（幂等，checkpoint 事实兜底）。
  *
+ * <p><b>消费线程池</b>：读线程只负责 {@code read} + 提交，节点执行在池里并行——执行以等 LLM/HTTP 为主，
+ * 单线程串行跑一批 10 条等于把延迟加起来。池是<b>固定大小 + 有界队列 + CallerRunsPolicy</b>：
+ * 队列满时读线程自己上手执行，被占住就不再 {@code read}，背压自动成立（无界队列会让它失效，故不用
+ * {@code Executors} 工厂方法）。线程工厂设 daemon——原实现两条 worker 线程都是守护线程，这个退出语义要保持。
+ *
+ * <p>并发正确性靠既有的幂等键 + checkpoint CAS 兜住：它们本就是防多 worker 并发的，多线程与跨实例同类。
+ *
  * <p><b>多 worker 并发（Bug 08）</b>：同一 run 的就绪节点可能落到不同实例，checkpoint 是共享可写文档。
  * 修正点是「节点输出 + 出边解析结果在<b>一次</b> {@code update} 里原子提交，且就绪性基于那份最新快照推导」。
  * 注意 T7.4 的幂等键防的是<b>重复</b>（同一节点执行两次），防不住<b>丢失</b>（不同节点互相覆盖）——
@@ -70,10 +83,36 @@ public class NodeWorker implements ApplicationRunner {
     private final int maxRetries;
     private final Map<NodeType, NodeExecutor> executors;
 
+    /**
+     * 节点执行线程池大小。执行是 IO 密集（等 LLM / HTTP），与核数无关——
+     * 真正的天花板是下游能放多少并发（provider 限流、Redis 连接池），所以这个值只能压测调。
+     */
+    private final int workerThreads;
+
+    /**
+     * 线程池队列容量。必须有界：无界队列会让背压彻底失效（读得比处理快 → 任务无限堆积 → OOM）。
+     */
+    private final int workerQueue;
+
+    /**
+     * 关闭开关：{@link #shutdown()} 置 false，读循环与任务提交都看它。
+     *
+     * <p>提交侧那道判断不是多余的——{@code CallerRunsPolicy} 在池已 shutdown 时是<b>静默丢弃</b>
+     * （实现是 {@code if (!isShutdown()) r.run();}），先自己拦住才不会让事件无声消失。
+     */
+    private volatile boolean running = true;
+
+    /**
+     * 节点执行池。在 {@link #run(ApplicationArguments)} 里构造——那时配置才注入完，且保证只建一次。
+     */
+    private ThreadPoolExecutor pool;
+
     public NodeWorker(EventBus eventBus, EventCodec codec, CheckpointStore checkpointStore,
                       WorkflowStore workflowStore, GraphRuntime graphRuntime, StringRedisTemplate redis,
                       RunProgressBus progressBus, List<NodeExecutor> executors,
-                      @Value("${core.event-driven.max-retries:3}") int maxRetries) {
+                      @Value("${core.event-driven.max-retries:3}") int maxRetries,
+                      @Value("${core.event-driven.worker-threads:16}") int workerThreads,
+                      @Value("${core.event-driven.worker-queue:64}") int workerQueue) {
         this.eventBus = eventBus;
         this.codec = codec;
         this.checkpointStore = checkpointStore;
@@ -82,19 +121,47 @@ public class NodeWorker implements ApplicationRunner {
         this.redis = redis;
         this.progressBus = progressBus;
         this.maxRetries = maxRetries;
+        this.workerThreads = workerThreads;
+        this.workerQueue = workerQueue;
         this.executors = new EnumMap<>(NodeType.class);
         executors.forEach(ex -> this.executors.put(ex.type(), ex));
     }
 
     @Override
     public void run(ApplicationArguments args) {
+        pool = new ThreadPoolExecutor(
+                workerThreads, workerThreads,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(workerQueue),
+                daemonThreadFactory(),
+                new ThreadPoolExecutor.CallerRunsPolicy()); // 队列满 → 读线程自己跑 → 背压
+
         Thread worker = new Thread(this::loop, "node-worker");
         worker.setDaemon(true);
         worker.start();
     }
 
+    /**
+     * 守护线程工厂。{@link ThreadPoolExecutor} 默认创建<b>非守护</b>线程——不设的话 JVM 退不出去
+     * （原实现两条 worker 线程都是 daemon，这个语义必须保持）。
+     */
+    private static ThreadFactory daemonThreadFactory() {
+        AtomicInteger seq = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, "node-worker-" + seq.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+    }
+
+    /**
+     * 读循环——只负责 {@code read} + 提交，处理在池里并行。
+     *
+     * <p>只有本线程调 {@code read}，所以消费组身份仍是「每实例一个」（每个线程各自 read 的架构才需要
+     * 把 consumer 名拆到线程粒度）。读满一批就提交，不等它们跑完。
+     */
     private void loop() {
-        while (true) {
+        while (running) {
             List<EventMessage> events;
             try {
                 events = eventBus.read(Streams.NODE, Streams.NODE_WORKER, consumerName(), 10, 2000);
@@ -103,13 +170,47 @@ public class NodeWorker implements ApplicationRunner {
                 continue;
             }
             for (EventMessage event : events) {
-                try {
-                    process(event);
-                    eventBus.ack(Streams.NODE, Streams.NODE_WORKER, event.id());
-                } catch (Exception e) {
-                    onProcessFailure(event, e); // T7.5：计数 → 超限进死信 + ACK，否则留在 PEL 重投
+                if (!running) {
+                    return; // 关闭中：不再提交，已读的留在 PEL 由重投兜底
                 }
+                pool.execute(() -> handle(event));
             }
+        }
+    }
+
+    /**
+     * 单个事件的处理单元——<b>整个包在任务里</b>：ACK 必须在 {@code process} 之后，
+     * 异常也必须在任务内捕获（{@code execute} 提交的任务抛出去只会杀掉线程，ACK 就丢了）。
+     */
+    private void handle(EventMessage event) {
+        try {
+            process(event);
+            eventBus.ack(Streams.NODE, Streams.NODE_WORKER, event.id());
+        } catch (Exception e) {
+            onProcessFailure(event, e); // T7.5：计数 → 超限进死信 + ACK，否则留在 PEL 重投
+        }
+    }
+
+    /**
+     * 优雅关闭：先停读循环，再给池里在跑的任务一点时间跑完（它们跑完才 ACK）。
+     *
+     * <p>这层是「尽量」不是「保证」——线程本来就是 daemon，进程被杀时照样会断在中途；
+     * 那种情况下靠的是消息不 ACK + checkpoint 事实，不是这里的 awaitTermination。
+     */
+    @PreDestroy
+    void shutdown() {
+        running = false;
+        if (pool == null) {
+            return; // 启动失败在 run() 之前：没有池可关，也绝不能在这里抛（会盖掉真正的启动异常）
+        }
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(30, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 

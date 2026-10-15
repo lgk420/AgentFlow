@@ -123,8 +123,9 @@ class NodeWorkerConcurrencyTest {
     }
 
     private NodeWorker newWorker(NodeExecutor executor) {
+        // 本用例直接调 process（不跑 loop），线程池不会建立，后两个值只是占位
         return new NodeWorker(eventBus, codec, checkpointStore, workflowStore, graphRuntime, template,
-                new RunProgressBus(), List.of(executor), 3);
+                new RunProgressBus(), List.of(executor), 3, 4, 16);
     }
 
     /** start → {a, b} → end 的 diamond：a、b 同时就绪，由两个 worker 分别处理。 */

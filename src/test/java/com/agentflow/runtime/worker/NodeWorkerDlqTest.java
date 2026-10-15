@@ -60,8 +60,9 @@ class NodeWorkerDlqTest {
         RedisCheckpointStore checkpointStore = new RedisCheckpointStore(template, mapper);
         WorkflowStore workflowStore = new WorkflowStore(template, new com.agentflow.engine.parse.GraphParser(mapper), mapper);
         GraphRuntime graphRuntime = new GraphRuntime(new ConditionEvaluator(), null);
+        // 本用例直接调 process（不跑 loop），线程池不会建立，后两个值只是占位
         worker = new NodeWorker(eventBus, new EventCodec(mapper), checkpointStore, workflowStore, graphRuntime,
-                template, new RunProgressBus(), List.of(), MAX_RETRIES);
+                template, new RunProgressBus(), List.of(), MAX_RETRIES, 4, 16);
     }
 
     @AfterEach

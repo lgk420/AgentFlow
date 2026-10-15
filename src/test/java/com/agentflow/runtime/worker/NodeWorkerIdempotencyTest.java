@@ -92,8 +92,9 @@ class NodeWorkerIdempotencyTest {
     }
 
     private NodeWorker newWorker(CountingToolExecutor counting) {
+        // 本用例直接调 process（不跑 loop），线程池不会建立，后两个值只是占位
         return new NodeWorker(eventBus, codec, checkpointStore, workflowStore, graphRuntime, template,
-                new RunProgressBus(), List.of(counting), 3);
+                new RunProgressBus(), List.of(counting), 3, 4, 16);
     }
 
     private void saveWorkflow() {
