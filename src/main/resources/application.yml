@@ -108,8 +108,12 @@ agentflow:
       # 默认关闭：关闭时 RAG 节点不放大召回也不调重排服务，行为与加重排之前完全一致
       # ——基线可复现，对照实验才有意义。开启前先起服务：bash scripts/dev.sh up --llm --rerank
       enabled: ${RERANK_ENABLED:false}
-      # Xinference 服务地址（compose 里只绑 127.0.0.1，WSL2 localhost 转发让 Windows 侧可访问）
-      base-url: ${RERANK_BASE_URL:http://localhost:9997}
+      # Xinference 服务地址。**必须写 127.0.0.1，不能写 localhost**：
+      # compose 里它是唯一绑 loopback 的端口（127.0.0.1:9997），而 WSL2 的 IPv6 localhost 转发
+      # 只对绑 0.0.0.0 的端口生效——写 localhost 时，JVM 一旦优先解析 IPv6（如
+      # -Djava.net.preferIPv6Addresses=true）就会连 ::1 被拒，报 ConnectException: null，
+      # 表现为「重排服务不可达」。写死 IPv4 对任何 JVM 参数都免疫。
+      base-url: ${RERANK_BASE_URL:http://127.0.0.1:9997}
       # 对应 `xinference launch` 返回并注册的 model_uid
       model: ${RERANK_MODEL:bge-reranker-v2-m3}
       # 召回条数——交给重排的候选池。太小（接近 topK）重排没得挑，正确块若排在池外就够不着；
